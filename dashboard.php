@@ -8,7 +8,15 @@ global $DB;
 $context = context_system::instance();
 require_capability('local/psaelmsync:viewlogs', $context);
 
-$PAGE->set_url('/local/psaelmsync/dashboard.php');
+// Get search param early so we can include it in the page URL
+$search = optional_param('search', '', PARAM_RAW);
+
+$pageurl = new moodle_url('/local/psaelmsync/dashboard.php');
+if (!empty($search)) {
+    $pageurl->param('search', $search);
+}
+
+$PAGE->set_url($pageurl);
 $PAGE->set_context($context);
 $PAGE->set_title(get_string('pluginname', 'local_psaelmsync') . ' - ' . get_string('logs', 'local_psaelmsync'));
 $PAGE->set_heading(get_string('logs', 'local_psaelmsync'));
@@ -46,9 +54,7 @@ echo $OUTPUT->header();
         </div>
     </div>
 </form>
-<?php 
-// Get the search query.
-$search = optional_param('search', '', PARAM_RAW);
+<?php
 if(!empty($search)):
 ?>
 <p>Searching for a timestamp will show you records 2 minutes on either side of the given time.</p>
