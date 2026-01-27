@@ -99,20 +99,27 @@ function process_enrolment_record($record) {
     global $DB;
     /**
      * Sample record 
-     * {
-     *   "COURSE_IDENTIFIER": 32090,
-     *   "COURSE_STATE": "Suspend",
-     *   "COURSE_STATE_DATE": "2023-04-11T08:06:43.000-07:00",
-     *   "GUID": "0000DE7307A24F53B8DC558936D0000",
-     *   "COURSE_SHORTNAME": "ITEM-2162-1",
-     *   "date_created": "2024-08-14T11:10:20.000-07:00",
-     *   "date_deleted": null,
-     *   "date_updated": null,
-     *   "EMAIL": "fizzbuzz@gov.bc.ca",
-     *   "FIRST_NAME": "Fizz",
-     *   "LAST_NAME": "Buzz",
-     *   "USER_EFFECTIVE_DATE": "2023-06-09",
-     *   "USER_STATE": "ACTIVE" //might be repurposed into enrolment_id holder
+     *{
+     *     "COURSE_IDENTIFIER": 40972,
+     *     "COURSE_STATE": "Enrol",
+     *     "COURSE_STATE_DATE": "2025-05-12T10:50:18.000-07:00",
+     *     "GUID": "5F421FC1A510420B9A19A46D24069FFD",
+     *     "COURSE_SHORTNAME": "ITEM-2625-1",
+     *     "date_created": "2025-05-12T11:00:20.000-07:00",
+     *     "date_deleted": null,
+     *     "date_updated": null,
+     *     "EMAIL": "allan.haggett@gov.bc.ca",
+     *     "FIRST_NAME": "Allan",
+     *     "LAST_NAME": "Haggett",
+     *     "USER_EFFECTIVE_DATE": "2017-02-07",
+     *     "USER_STATE": "ACTIVE",
+     *     "record_enrol_id": 39861,
+     *     "OPRID": "AHAGGETT",
+     *     "PERSON_ID": 115000,
+     *     "ENROLMENT_ID": 2627101,
+     *     "ACTIVITY_ID": 21177,
+     *     "COURSE_LONG_NAME": "B.C. Provincial Government Essentials",
+     *     "COURSE_START_DATE": null
      * },
      */
     
