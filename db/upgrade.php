@@ -20,5 +20,17 @@ function xmldb_local_psaelmsync_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2024090606, 'local', 'psaelmsync');
     }
 
+    // Upgrade step for increasing action field length from 20 to 100.
+    if ($oldversion < 2026012701) {
+        $table = new xmldb_table('local_psaelmsync_logs');
+        $field = new xmldb_field('action', XMLDB_TYPE_CHAR, '100', null, XMLDB_NOTNULL, null, null, 'elm_enrolment_id');
+
+        // Change the field precision.
+        $dbman->change_field_precision($table, $field);
+
+        // PSA ELM Sync savepoint reached.
+        upgrade_plugin_savepoint(true, 2026012701, 'local', 'psaelmsync');
+    }
+
     return true;
 }

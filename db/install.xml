@@ -17,7 +17,7 @@
             <FIELD NAME="user_guid" TYPE="char" LENGTH="100" NOTNULL="true" COMMENT="User GUID"/>
             <FIELD NAME="user_email" TYPE="char" LENGTH="100" NOTNULL="true" COMMENT="User Email"/>
             <FIELD NAME="elm_enrolment_id" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="Custom enrolment ID"/>
-            <FIELD NAME="action" TYPE="char" LENGTH="20" NOTNULL="true" COMMENT="Action (enrolled, suspended)"/>
+            <FIELD NAME="action" TYPE="char" LENGTH="100" NOTNULL="true" COMMENT="Action (enrolled, suspended)"/>
             <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" COMMENT="Status (success, error)"/>
             <FIELD NAME="timestamp" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="Timestamp"/>
         </FIELDS>

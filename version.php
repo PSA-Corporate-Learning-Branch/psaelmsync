@@ -1,7 +1,7 @@
 <?php
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2025030501;
+$plugin->version   = 2026012701;
 $plugin->requires  = 2021051718; // Moodle 3.11+.
 $plugin->component = 'local_psaelmsync';
 $plugin->cron      = 600; // Run every 10 minutes.
