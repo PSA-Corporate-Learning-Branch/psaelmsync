@@ -1,19 +1,19 @@
 <?php
 /**
- * Manual intake. 
- * 
- * Read the CData feed directly and echo it back; do lookups on each record
- * and provide options to action them.
- * 
+ * Manual intake - Diff-style UI for reviewing and processing CData enrolment records.
+ *
+ * Provides a clear comparison between CData records and Moodle state,
+ * with status categorization and enhanced filtering.
+ *
  * Author: Allan Haggett <allan.haggett@gov.bc.ca>
- * 
  */
 
 global $CFG, $DB, $PAGE, $OUTPUT;
 
 require_once('../../config.php');
+require_once($CFG->libdir . '/filelib.php');
 require_once($CFG->dirroot . '/user/lib.php');
-require_once($CFG->dirroot . '/local/psaelmsync/lib.php'); // Include lib.php
+require_once($CFG->dirroot . '/local/psaelmsync/lib.php');
 
 require_login();
 
@@ -25,124 +25,261 @@ $PAGE->set_context($context);
 $PAGE->set_title(get_string('pluginname', 'local_psaelmsync') . ' - ' . get_string('queryapi', 'local_psaelmsync'));
 $PAGE->set_heading(get_string('queryapi', 'local_psaelmsync'));
 
-$apiurl = get_config('local_psaelmsync', 'apiurl'); // Fetch the API URL from plugin settings
+$apiurl = get_config('local_psaelmsync', 'apiurl');
 $apitoken = get_config('local_psaelmsync', 'apitoken');
 
-echo $OUTPUT->header();
-
 // Initialize variables
-$from = '';
-$to = '';
 $data = null;
 $feedback = '';
+$feedback_type = 'info';
+
+// Get filter values (persisted across requests)
+$filter_from = optional_param('from', '', PARAM_TEXT);
+$filter_to = optional_param('to', '', PARAM_TEXT);
+$filter_email = optional_param('email', '', PARAM_TEXT);
+$filter_guid = optional_param('guid', '', PARAM_TEXT);
+$filter_course = optional_param('course', '', PARAM_TEXT);
+$filter_state = optional_param('state', '', PARAM_ALPHA);
+$filter_status = optional_param('status', '', PARAM_ALPHA);
+$apiurlfiltered = '';
+
+/**
+ * Determine the status category for a record based on Moodle state comparison.
+ */
+function determine_record_status($record, $user, $course, $hash_exists, $is_enrolled) {
+    // Already processed
+    if ($hash_exists) {
+        return [
+            'status' => 'done',
+            'label' => 'Already Processed',
+            'icon' => '✓',
+            'class' => 'secondary',
+            'can_process' => false,
+            'reason' => 'This record has already been processed.'
+        ];
+    }
+
+    // Course not found
+    if (!$course) {
+        return [
+            'status' => 'blocked',
+            'label' => 'Course Not Found',
+            'icon' => '✗',
+            'class' => 'danger',
+            'can_process' => false,
+            'reason' => "Course with ELM ID {$record['COURSE_IDENTIFIER']} does not exist in Moodle."
+        ];
+    }
+
+    // Check if action is already done (enrolled when should be enrolled, etc.)
+    if ($record['COURSE_STATE'] === 'Enrol' && $is_enrolled) {
+        return [
+            'status' => 'done',
+            'label' => 'Already Enrolled',
+            'icon' => '✓',
+            'class' => 'secondary',
+            'can_process' => false,
+            'reason' => 'User is already enrolled in this course.'
+        ];
+    }
+
+    if ($record['COURSE_STATE'] === 'Suspend' && !$is_enrolled) {
+        return [
+            'status' => 'done',
+            'label' => 'Not Enrolled',
+            'icon' => '✓',
+            'class' => 'secondary',
+            'can_process' => false,
+            'reason' => 'User is not enrolled, nothing to suspend.'
+        ];
+    }
+
+    // User doesn't exist - will be created
+    if (!$user) {
+        return [
+            'status' => 'new_user',
+            'label' => 'New User',
+            'icon' => '+',
+            'class' => 'info',
+            'can_process' => true,
+            'reason' => 'User will be created and enrolled.'
+        ];
+    }
+
+    // Email mismatch
+    if (strtolower($user->email) !== strtolower($record['EMAIL'])) {
+        return [
+            'status' => 'mismatch',
+            'label' => 'Email Mismatch',
+            'icon' => '⚠',
+            'class' => 'warning',
+            'can_process' => false,
+            'reason' => 'The email in CData does not match the Moodle account. Manual investigation required.'
+        ];
+    }
+
+    // Ready to process
+    return [
+        'status' => 'ready',
+        'label' => 'Ready',
+        'icon' => '●',
+        'class' => 'success',
+        'can_process' => true,
+        'reason' => "Ready to {$record['COURSE_STATE']}."
+    ];
+}
+
+/**
+ * Check if user is enrolled in course by idnumber.
+ */
+function check_user_enrolled($courseidnumber, $userid) {
+    global $DB;
+
+    $course = $DB->get_record('course', ['idnumber' => $courseidnumber]);
+    if (!$course) {
+        return false;
+    }
+
+    $user_courses = enrol_get_users_courses($userid, true, ['id']);
+    foreach ($user_courses as $user_course) {
+        if ($user_course->id == $course->id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Create a new user (local helper matching lib.php pattern).
+ */
+function create_new_user_local($user_email, $first_name, $last_name, $user_guid) {
+    global $DB;
+
+    $user = new stdClass();
+    $user->username = strtolower($user_email);
+    $user->email = $user_email;
+    $user->idnumber = $user_guid;
+    $user->firstname = $first_name;
+    $user->lastname = $last_name;
+    $user->password = hash_internal_user_password(random_string(8));
+    $user->confirmed = 1;
+    $user->auth = 'oauth2';
+    $user->emailformat = 1;
+    $user->mnethostid = 1;
+    $user->timecreated = time();
+    $user->timemodified = time();
+
+    $user->id = user_create_user($user, true, false);
+
+    return $user;
+}
 
 // Process form submissions
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['process'])) {
-        // For security
-        require_sesskey();
-        // Processing a single record
-        $record_date_created = required_param('record_date_created', PARAM_TEXT);
-        $course_state = required_param('course_state', PARAM_TEXT);
-        $elm_course_id = required_param('elm_course_id', PARAM_TEXT);
-        $elm_enrolment_id = required_param('elm_enrolment_id', PARAM_TEXT);
-        $user_guid = required_param('guid', PARAM_TEXT);
-        $class_code = required_param('class_code', PARAM_TEXT);
-        $user_email = required_param('email', PARAM_TEXT);
-        $first_name = required_param('first_name', PARAM_TEXT);
-        $last_name = required_param('last_name', PARAM_TEXT);
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
+    require_sesskey();
 
-        $hash_content = $record_date_created . $elm_course_id . $class_code . $course_state . $user_guid . $user_email;
-        $hash = hash('sha256', $hash_content);
+    $record_date_created = required_param('record_date_created', PARAM_TEXT);
+    $course_state = required_param('course_state', PARAM_TEXT);
+    $elm_course_id = required_param('elm_course_id', PARAM_TEXT);
+    $elm_enrolment_id = required_param('elm_enrolment_id', PARAM_TEXT);
+    $user_guid = required_param('guid', PARAM_TEXT);
+    $class_code = required_param('class_code', PARAM_TEXT);
+    $user_email = required_param('email', PARAM_TEXT);
+    $first_name = required_param('first_name', PARAM_TEXT);
+    $last_name = required_param('last_name', PARAM_TEXT);
 
-        $hashcheck = $DB->get_record('local_psaelmsync_logs', ['sha256hash' => $hash], '*', IGNORE_MULTIPLE);
-        // Does the hash exist in the table? 
-        if ($hashcheck) {
-            $feedback = 'This has already been processed.';
-        }
-        
-        // Find the course by its idnumber (COURSE_IDENTIFIER maps to idnumber)
+    $hash_content = $record_date_created . $elm_course_id . $class_code . $course_state . $user_guid . $user_email;
+    $hash = hash('sha256', $hash_content);
+
+    $hashcheck = $DB->get_record('local_psaelmsync_logs', ['sha256hash' => $hash], '*', IGNORE_MULTIPLE);
+
+    if ($hashcheck) {
+        $feedback = 'This record has already been processed.';
+        $feedback_type = 'warning';
+    } else {
         $course = $DB->get_record('course', ['idnumber' => $elm_course_id]);
-        if ($course) {
 
-            // Find the user by GUID, create if they don't exist
+        if (!$course) {
+            $feedback = "Course with ELM ID {$elm_course_id} not found in Moodle.";
+            $feedback_type = 'danger';
+        } else {
             $user = $DB->get_record('user', ['idnumber' => $user_guid]);
+
             if (!$user) {
-                // Create the new user if they don't exist
-                $user = create_new_user($user_email, $first_name, $last_name, $user_guid);
-                
+                $user = create_new_user_local($user_email, $first_name, $last_name, $user_guid);
+
                 if (!$user) {
-                    // We can't find them via GUID but is there an account with the same email?
                     $useremailcheck = $DB->get_record('user', ['email' => $user_email]);
-                    if (!$useremailcheck) {
-                        // If there is no account with the email just put out a generic error.
-                        $feedback = "Failed to create a new user for GUID {$user_guid}.";
+                    if ($useremailcheck) {
+                        $feedback = "Failed to create user. An account with email {$user_email} already exists. ";
+                        $feedback .= "<a href='/user/view.php?id={$useremailcheck->id}' target='_blank'>View existing account</a>";
                     } else {
-                        // If there is an account with the email
-                        $feedback = "Failed to create a new user for GUID {$user_guid}, ";
-                        $feedback .= "but there is <a href='/user/view.php?id={$useremailcheck->id}'>an account</a>";
-                        $feedback .= "with that {$user_email}. Please investigate further.";
+                        $feedback = "Failed to create a new user for GUID {$user_guid}.";
                     }
+                    $feedback_type = 'danger';
                 }
             }
 
             if ($user) {
-
-                // Even if we find a user by the provided GUID, we also need to check
-                // to see if the email address associated with the account is consistent
-                // with this CData record. If it isn't then we notify admins and error out.
-                if ($user->email != $user_email) {
-                    $feedback = 'There is an email mismatch happening. ';
-                    // Check if another user already has the new email address
+                // Check for email mismatch
+                if (strtolower($user->email) !== strtolower($user_email)) {
+                    $feedback = "Email mismatch: Moodle has '{$user->email}' but CData has '{$user_email}'. ";
                     $useremailcheck = $DB->get_record('user', ['email' => $user_email]);
-                    // We base usernames on email addresses, so we want to be double-sure
-                    // and also check to ensure that the username doesn't exist. 
-                    // These are almost certainly going to be the same, but weird things happen 
-                    // around here so we just make sure.
-                    // Generate the new username based on the new email address for comparison
-                    $new_username = strtolower($user_email);
-                    // If we need to optimize this process at any point, this lookup might 
-                    // be considered a bit redundant.
-                    $username_exists = $DB->record_exists('user', ['username' => $new_username]);
-
-                    if (!$useremailcheck && !$username_exists) {
-                        $feedback .= 'There is no existing account with that address.';
-                    } else { // There IS another account with this email or username
-                        $feedback .= 'There is an <a href="/user/view.php?id=' . $useremailcheck->id . '">existing account</a> with that address.';
+                    if ($useremailcheck) {
+                        $feedback .= "Another account exists with the CData email: ";
+                        $feedback .= "<a href='/user/view.php?id={$useremailcheck->id}' target='_blank'>View account</a>";
                     }
-                } // end email check
+                    $feedback_type = 'danger';
+                } else {
+                    $manual_enrol = enrol_get_plugin('manual');
+                    $enrol_instances = enrol_get_instances($course->id, true);
+                    $manual_instance = null;
 
-                // Get the manual enrolment plugin
-                $manual_enrol = enrol_get_plugin('manual');
-                $enrol_instances = enrol_get_instances($course->id, true);
-                $manual_instance = null;
-
-                // Find the manual enrolment instance for the course
-                foreach ($enrol_instances as $instance) {
-                    if ($instance->enrol === 'manual') {
-                        $manual_instance = $instance;
-                        break;
+                    foreach ($enrol_instances as $instance) {
+                        if ($instance->enrol === 'manual') {
+                            $manual_instance = $instance;
+                            break;
+                        }
                     }
-                }
 
-                if ($manual_instance && !empty($manual_instance->roleid)) {
-                    // Based on COURSE_STATE, enroll or suspend the user
-                    if ($course_state === 'Enrol') {
+                    if ($manual_instance && !empty($manual_instance->roleid)) {
+                        if ($course_state === 'Enrol') {
+                            $manual_enrol->enrol_user($manual_instance, $user->id, $manual_instance->roleid, 0, 0, ENROL_USER_ACTIVE);
 
-                        // Enroll the user
-                        $manual_enrol->enrol_user($manual_instance, $user->id, $manual_instance->roleid, 0, 0, ENROL_USER_ACTIVE);
+                            $is_enrolled = $DB->record_exists('user_enrolments', ['userid' => $user->id, 'enrolid' => $manual_instance->id]);
 
-                        // Invalidate the enrolment cache for the user.
-                        // cache_helper::invalidate_by_definition('core', 'userenrolments', array(), array($user->id));
-                        // // Invalidate the course context cache.
-                        // $context = context_course::instance($course->id);
-                        // $context->mark_dirty();
-                        
-                        // Check if enrolment was successful
-                        $is_enrolled = $DB->record_exists('user_enrolments', ['userid' => $user->id, 'enrolid' => $manual_instance->id]);
-                                        
-                        if ($is_enrolled) {
-                            // Log it!!
+                            if ($is_enrolled) {
+                                $log = new stdClass();
+                                $log->record_id = time();
+                                $log->sha256hash = $hash;
+                                $log->record_date_created = $record_date_created;
+                                $log->course_id = $course->id;
+                                $log->elm_course_id = $elm_course_id;
+                                $log->class_code = $class_code;
+                                $log->course_name = $course->fullname;
+                                $log->user_id = $user->id;
+                                $log->user_firstname = $user->firstname;
+                                $log->user_lastname = $user->lastname;
+                                $log->user_guid = $user->idnumber;
+                                $log->user_email = $user->email;
+                                $log->elm_enrolment_id = $elm_enrolment_id;
+                                $log->action = 'Manual Enrol';
+                                $log->status = 'Success';
+                                $log->timestamp = time();
+
+                                $DB->insert_record('local_psaelmsync_logs', $log);
+
+                                $feedback = "Successfully enrolled {$user->email} in {$course->fullname}.";
+                                $feedback_type = 'success';
+
+                                send_welcome_email($user, $course);
+                            } else {
+                                $feedback = "Failed to enrol {$user->email} in the course.";
+                                $feedback_type = 'danger';
+                            }
+                        } elseif ($course_state === 'Suspend') {
+                            $manual_enrol->update_user_enrol($manual_instance, $user->id, ENROL_USER_SUSPENDED);
+
                             $log = new stdClass();
                             $log->record_id = time();
                             $log->sha256hash = $hash;
@@ -154,164 +291,297 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $log->user_id = $user->id;
                             $log->user_firstname = $user->firstname;
                             $log->user_lastname = $user->lastname;
-                            $log->user_guid = $user->idnumber; 
+                            $log->user_guid = $user->idnumber;
                             $log->user_email = $user->email;
                             $log->elm_enrolment_id = $elm_enrolment_id;
-                            $log->action = 'Manual Enrol';
+                            $log->action = 'Manual Suspend';
                             $log->status = 'Success';
                             $log->timestamp = time();
-                        
+
                             $DB->insert_record('local_psaelmsync_logs', $log);
 
-                            $feedback = "User {$user->email} has been enrolled in the course.";
-
-                            send_welcome_email($user, $course); // Send the welcome email
-                            
+                            $feedback = "Successfully suspended {$user->email} from {$course->fullname}.";
+                            $feedback_type = 'success';
                         } else {
-                            $feedback = "Failed to enroll user {$user->email} in the course.";
+                            $feedback = "Invalid course state: {$course_state}";
+                            $feedback_type = 'danger';
                         }
-
-                    } elseif ($course_state === 'Suspend') {
-                        // Suspend the user enrolment
-                        $manual_enrol->update_user_enrol($manual_instance, $user->id, ENROL_USER_SUSPENDED);
-
-                        // Invalidate the enrolment cache for the user.
-                        // cache_helper::invalidate_by_definition('core', 'userenrolments', array(), array($user->id));
-                        // // Invalidate the course context cache.
-                        // $context = context_course::instance($course->id);
-                        // $context->mark_dirty();
-
-                        // Log it!!
-                        $log = new stdClass();
-                        $log->record_id = time();
-                        $log->sha256hash = $hash;
-                        $log->record_date_created = $record_date_created;
-                        $log->course_id = $course->id;
-                        $log->elm_course_id = $elm_course_id;
-                        $log->class_code = $class_code;
-                        $log->course_name = $course->fullname;
-                        $log->user_id = $user->id;
-                        $log->user_firstname = $user->firstname;
-                        $log->user_lastname = $user->lastname;
-                        $log->user_guid = $user->idnumber; 
-                        $log->user_email = $user->email;
-                        $log->elm_enrolment_id = $elm_enrolment_id;
-                        $log->action = 'Manual Suspend';
-                        $log->status = 'Success';
-                        $log->timestamp = time();
-                    
-                        $DB->insert_record('local_psaelmsync_logs', $log);
-
-                        $feedback = "User {$user->email} has been suspended from the course.";
-
                     } else {
-
-                        $feedback = "Invalid course state.";
-
+                        $feedback = "No manual enrolment instance found for this course.";
+                        $feedback_type = 'danger';
                     }
-                } else {
-                    $feedback = "No manual enrolment instance found for the course.";
                 }
             }
-        } else {
-            $feedback = "Course with identifier {$elm_course_id} not found.";
         }
+    }
+}
+
+// Build API query if filters are provided
+if (!empty($filter_email) || !empty($filter_guid) || !empty($filter_from) || !empty($filter_course)) {
+    $filters = [];
+
+    if (!empty($filter_email)) {
+        $filters[] = "email+eq+%27" . urlencode($filter_email) . "%27";
+    }
+    if (!empty($filter_guid)) {
+        $filters[] = "GUID+eq+%27" . urlencode($filter_guid) . "%27";
+    }
+    if (!empty($filter_course)) {
+        // Support both course ID and shortname search
+        if (is_numeric($filter_course)) {
+            $filters[] = "COURSE_IDENTIFIER+eq+" . urlencode($filter_course);
+        } else {
+            $filters[] = "COURSE_SHORTNAME+eq+%27" . urlencode($filter_course) . "%27";
+        }
+    }
+    if (!empty($filter_from) && !empty($filter_to)) {
+        $filters[] = "date_created+gt+%27" . urlencode($filter_from) . "%27";
+        $filters[] = "date_created+lt+%27" . urlencode($filter_to) . "%27";
+    } elseif (!empty($filter_from)) {
+        $filters[] = "date_created+gt+%27" . urlencode($filter_from) . "%27";
+    }
+    if (!empty($filter_state)) {
+        $filters[] = "COURSE_STATE+eq+%27" . urlencode($filter_state) . "%27";
+    }
+
+    $apiurlfiltered = $apiurl . "?%24orderby=COURSE_STATE_DATE,date_created+asc";
+    if (!empty($filters)) {
+        $apiurlfiltered .= "&%24filter=" . implode("+and+", $filters);
+    }
+
+    $options = array(
+        'RETURNTRANSFER' => 1,
+        'HEADER' => 0,
+    );
+    $header = array('x-cdata-authtoken: ' . $apitoken);
+    $curl = new curl();
+    $curl->setHeader($header);
+    $response = $curl->get($apiurlfiltered, $options);
+
+    // Check for cURL-level errors
+    if ($curl->get_errno()) {
+        $feedback = 'cURL Error: ' . $curl->error;
+        $feedback_type = 'danger';
     } else {
-        // Handle the date range form submission (API query)
+        // Check HTTP status code
+        $info = $curl->get_info();
+        $http_code = $info['http_code'] ?? 0;
 
-        // Build the API URL with date filters
-        $from = required_param('from', PARAM_TEXT);
-        $to = required_param('to', PARAM_TEXT);
-        $user_emaillookup = required_param('emaillookup', PARAM_TEXT);
-        $user_guidlookup = required_param('guidlookup', PARAM_TEXT);
-        // #TODO Update this so that it's not either/or; able to combine email/guid 
-        // with a date range.
-        if(!empty($user_emaillookup)) {
-            // $apiurlfiltered = $apiurl . "&filter=date_created,gt," . urlencode($from) . "&filter=date_created,lt," . urlencode($to); // MOCK API format
-            $apiurlfiltered = $apiurl . "?%24orderby=COURSE_STATE_DATE,date_created+asc&%24filter=email+eq+%27" . urlencode($user_emaillookup) . "%27";
-        } elseif(!empty($user_guidlookup)) {
-            $apiurlfiltered = $apiurl . "?%24orderby=COURSE_STATE_DATE,date_created+asc&%24filter=GUID+eq+%27" . urlencode($user_guidlookup) . "%27";
+        if ($http_code >= 400) {
+            $feedback = "API Error: HTTP {$http_code}";
+            if ($http_code == 502) {
+                $feedback .= ' (Bad Gateway - the CData server may be down or unreachable)';
+            } elseif ($http_code == 401) {
+                $feedback .= ' (Unauthorized - check API token)';
+            } elseif ($http_code == 403) {
+                $feedback .= ' (Forbidden - check IP whitelist/VPN)';
+            } elseif ($http_code == 404) {
+                $feedback .= ' (Not Found - check API URL)';
+            } elseif ($http_code == 500) {
+                $feedback .= ' (Internal Server Error)';
+            }
+            $feedback .= '<br><small class="text-muted">Response: ' . htmlspecialchars(substr($response, 0, 500)) . '</small>';
+            $feedback_type = 'danger';
         } else {
-            $apiurlfiltered = $apiurl . "?%24orderby=COURSE_STATE_DATE,date_created+asc&%24filter=date_created+gt+%27" . urlencode($from) . "%27+and+date_created+lt+%27" . urlencode($to) . '%27';
-        }
+            $data = json_decode($response, true);
 
-        // Make API call.
-        $options = array(
-            'RETURNTRANSFER' => 1,
-            'HEADER' => 0,
-            'FAILONERROR' => 1,
-        );
-        $header = array('x-cdata-authtoken: ' . $apitoken);
-        $curl = new curl();
-        $curl->setHeader($header);
-        $response = $curl->get($apiurlfiltered, $options);
-        
-        // Check for cURL errors
-        if ($curl->get_errno()) {
-            echo '<div class="alert alert-danger">Error: Unable to fetch data from API.</div>';
-        } else {
-
-            $data = json_decode($response, true); // Decode the JSON response
-
+            // Check for JSON decode errors
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                $feedback = 'API Error: Invalid JSON response - ' . json_last_error_msg();
+                $feedback .= '<br><small class="text-muted">Response: ' . htmlspecialchars(substr($response, 0, 500)) . '</small>';
+                $feedback_type = 'danger';
+                $data = null;
+            }
         }
     }
 }
 
-// Display the feedback if there is any
-if (!empty($feedback)) {
-    echo '<div class="alert alert-info">' . $feedback . '</div>';
-}
+// Process records to add status information
+$processed_records = [];
+if (!empty($data['value'])) {
+    foreach ($data['value'] as $record) {
+        $user = $DB->get_record('user', ['idnumber' => $record['GUID']]);
+        $course = $DB->get_record('course', ['idnumber' => (int)$record['COURSE_IDENTIFIER']], 'id, fullname, shortname');
 
-// Helper function to check if the user is enrolled in the course
-function check_user_enrolment_status($courseidnumber, $userid) {
-    global $DB;
+        $hash_content = $record['date_created'] . $record['COURSE_IDENTIFIER'] . $record['COURSE_SHORTNAME'] . $record['COURSE_STATE'] . $record['GUID'] . $record['EMAIL'];
+        $hash = hash('sha256', $hash_content);
+        $hash_exists = $DB->record_exists('local_psaelmsync_logs', ['sha256hash' => $hash]);
 
-    // Find the course by idnumber
-    $course = $DB->get_record('course', ['idnumber' => $courseidnumber]);
-    if (!$course) {
-        return 'Course not found';
-    }
-
-    // Check if the user is enrolled in the course using enrol_get_users_courses()
-    $user_courses = enrol_get_users_courses($userid, true, ['id']);
-    
-    // Iterate through courses the user is enrolled in
-    foreach ($user_courses as $user_course) {
-        if ($user_course->id == $course->id) {
-            // User is enrolled in this course
-            return true;
+        $is_enrolled = false;
+        if ($user && $course) {
+            $is_enrolled = check_user_enrolled($record['COURSE_IDENTIFIER'], $user->id);
         }
+
+        $status_info = determine_record_status($record, $user, $course, $hash_exists, $is_enrolled);
+
+        // Apply status filter if set
+        if (!empty($filter_status) && $status_info['status'] !== $filter_status) {
+            continue;
+        }
+
+        $processed_records[] = [
+            'record' => $record,
+            'user' => $user,
+            'course' => $course,
+            'is_enrolled' => $is_enrolled,
+            'status_info' => $status_info,
+            'hash_exists' => $hash_exists
+        ];
     }
-    return false;
 }
 
-// Helper function to create a new user
-// #TODO this likely doesn't need to be here; should be able to use from lib.php
-function create_new_user($user_email, $first_name, $last_name, $user_guid) {
-    global $DB;
-
-    $user = new stdClass();
-    $user->username = strtolower($user_email);
-    $user->email = $user_email;
-    $user->idnumber = $user_guid;
-    $user->firstname = $first_name;
-    $user->lastname = $last_name;
-    $user->password = hash_internal_user_password(random_string(8));
-    $user->confirmed = 1; // Confirmed account
-    $user->auth = 'oauth2';
-    $user->emailformat = 1; // 1 for HTML, 0 for plain text
-    $user->mnethostid = 1;
-    $user->timecreated = time();
-    $user->timemodified = time();
-
-    $user->id = user_create_user($user, true, false);
-
-    return $user;
-
-}
-
-
+echo $OUTPUT->header();
 ?>
+
+<style>
+.manual-intake-filters {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+.manual-intake-filters .form-group {
+    margin-bottom: 0.5rem;
+}
+.manual-intake-filters label {
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+.record-table {
+    font-size: 0.9rem;
+}
+.record-table th {
+    white-space: nowrap;
+    background: #f8f9fa;
+}
+.record-row {
+    cursor: pointer;
+}
+.record-row:hover {
+    background: #f8f9fa;
+}
+.record-row.expanded {
+    background: #e9ecef;
+}
+.record-details {
+    display: none;
+    background: #fff;
+}
+.record-details.show {
+    display: table-row;
+}
+.record-details td {
+    padding: 1rem;
+    border-top: none;
+}
+.diff-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+.diff-panel {
+    background: #f8f9fa;
+    border-radius: 0.5rem;
+    padding: 1rem;
+}
+.diff-panel h6 {
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #dee2e6;
+}
+.diff-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.25rem 0;
+    font-size: 0.85rem;
+}
+.diff-row .label {
+    color: #6c757d;
+}
+.diff-row .value {
+    font-weight: 500;
+}
+.diff-match {
+    color: #28a745;
+}
+.diff-mismatch {
+    color: #dc3545;
+    background: #fff3cd;
+    padding: 0 0.25rem;
+    border-radius: 0.25rem;
+}
+.diff-new {
+    color: #17a2b8;
+    font-style: italic;
+}
+.status-badge {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.5rem;
+}
+.status-reason {
+    font-size: 0.85rem;
+    color: #6c757d;
+    margin-top: 0.75rem;
+    padding: 0.5rem;
+    background: #fff;
+    border-radius: 0.25rem;
+}
+.action-buttons {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #dee2e6;
+}
+.existing-logs {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #dee2e6;
+}
+.existing-logs h6 {
+    font-size: 0.85rem;
+    color: #6c757d;
+}
+.log-entry {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.5rem;
+    background: #e9ecef;
+    border-radius: 0.25rem;
+    margin-bottom: 0.25rem;
+}
+.query-debug {
+    font-size: 0.8rem;
+    background: #f8f9fa;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+    margin-bottom: 1rem;
+    word-break: break-all;
+}
+.filter-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: end;
+}
+.results-summary {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+.results-summary .summary-item {
+    background: #f8f9fa;
+    padding: 0.5rem 1rem;
+    border-radius: 0.25rem;
+    font-size: 0.85rem;
+}
+.expand-icon {
+    transition: transform 0.2s;
+    display: inline-block;
+}
+.record-row.expanded .expand-icon {
+    transform: rotate(90deg);
+}
+</style>
+
 <!-- Tabbed Navigation -->
 <ul class="nav nav-tabs mb-3">
     <li class="nav-item">
@@ -333,170 +603,424 @@ function create_new_user($user_email, $first_name, $last_name, $user_guid) {
         <a class="nav-link" href="/local/psaelmsync/manual-complete.php">Manual Complete</a>
     </li>
 </ul>
-<!-- Form to input the 'from' and 'to' dates -->
-<form method="post" action="<?php echo $PAGE->url; ?>" class="mb-3">
-    <div class="row">
-    <div class="form-group col-2">
-        <label for="from"><?php echo get_string('from', 'local_psaelmsync'); ?></label>
-        <input type="datetime-local" id="from" name="from" class="form-control" value="<?php echo s($from); ?>">
-    </div>
-    <div class="form-group col-2">
-        <label for="to"><?php echo get_string('to', 'local_psaelmsync'); ?></label>
-        <input type="datetime-local" id="to" name="to" class="form-control" value="<?php echo s($to); ?>">
-    </div>
-    <div class="form-group col-2">
-        <label for="emaillookup"><?php echo get_string('email_cdata_lookup', 'local_psaelmsync'); ?></label>
-        <input type="email" id="emaillookup" name="emaillookup" class="form-control" value="<?php echo s($user_emaillookup); ?>">
-    </div>
-    <div class="form-group col-2">
-        <label for="guidlookup"><?php echo get_string('guid_cdata_lookup', 'local_psaelmsync'); ?></label>
-        <input type="text" id="guidlookup" name="guidlookup" class="form-control" value="<?php echo s($user_guidlookup); ?>">
-    </div>
-    </div>
-    <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
-    <button type="submit" class="btn btn-primary"><?php echo get_string('submit', 'local_psaelmsync'); ?></button>
-</form>
-<?php if(!empty($apiurlfiltered)): ?>
-<div>   
-    Query: <input type="text" name="queryurl" class="form-field" value="<?= $apiurlfiltered ?>">
-    <a href="<?= $apiurlfiltered ?>" class="btn btn-sm btn-secondary" target="_blank">Launch</a> (VPN required; IP whitelist required)
+
+<?php if (!empty($feedback)): ?>
+<div class="alert alert-<?php echo $feedback_type; ?> alert-dismissible fade show" role="alert">
+    <?php echo $feedback; ?>
+    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+        <span aria-hidden="true">&times;</span>
+    </button>
 </div>
-<?php endif ?>
-<!-- Result section where the fetched records will be displayed -->
-<?php
-if (!empty($data)) {
-    if (isset($data['value']) && count($data['value']) > 0) {
-        // Display the results in a table        
-        echo '<div class="row">';
-        // Loop through the records and display them
-        foreach ($data['value'] as $record) {
-            $logs = [];
-            $coursefullname = '<strong>Cannot find course.</strong>';
-            $moodlecourseid = 0;
-            $courseidnum = (int) $record['COURSE_IDENTIFIER'];
-            
-            // Fetch the course based on idnumber
-            if ($course = $DB->get_record('course', array('idnumber' => $courseidnum), 'id, fullname')) {
-                $coursefullname = $course->fullname;
-                $moodlecourseid = $course->id;
-            }
+<?php endif; ?>
 
-            echo '<div class="col-md-4">';
-            echo '<div class="m-2 p-3 bg-light rounded-lg">';
-            // Find the user by GUID
-            $user = $DB->get_record('user', ['idnumber' => $record['GUID']]);
-            
-            $enrol_status = 'Not Enrolled';
-            $user_status = "Doesn't exist";
-            
-            // Check if user exists
-            if ($user) {
-                // Check if the user is enrolled in the course
-                if (check_user_enrolment_status($record['COURSE_IDENTIFIER'], $user->id)) {
-                    $enrol_status = 'Enrolled';
-                }
-                $user_status = "User exists";
-                $elmcourseid = $record['COURSE_IDENTIFIER'];
-                
-                // Get enrolment logs from local_psaelmsync_logs table
-                $logs = $DB->get_records('local_psaelmsync_logs', 
-                                            [
-                                                'elm_course_id' => $elmcourseid, 
-                                                'user_id' => $user->id
-                                            ], 
-                                            '', 
-                                            'timestamp, action, user_guid, user_email');
-            }
-            // Display a process form if needed
-            if (($record['COURSE_STATE'] == 'Enrol' && $enrol_status == 'Enrolled') || ($record['COURSE_STATE'] == 'Suspend' && $enrol_status == 'Not Enrolled')) {
-                // Do nothing
-            } else {
-                if (!empty($moodlecourseid)) {
-                    echo '<form class="float-right ml-4" method="post" action="' . $PAGE->url . '">';
-                    echo '<input type="hidden" name="elm_course_id" value="' . htmlspecialchars($record['COURSE_IDENTIFIER']) . '">';
-                    echo '<input type="hidden" name="elm_enrolment_id" value="' . htmlspecialchars($record['ENROLMENT_ID']) . '">';
-                    echo '<input type="hidden" name="record_date_created" value="' . htmlspecialchars($record['date_created']) . '">';
-                    echo '<input type="hidden" name="course_state" value="' . htmlspecialchars($record['COURSE_STATE']) . '">';
-                    echo '<input type="hidden" name="class_code" value="' . htmlspecialchars($record['COURSE_SHORTNAME']) . '">';
-                    echo '<input type="hidden" name="guid" value="' . htmlspecialchars($record['GUID']) . '">';
-                    echo '<input type="hidden" name="email" value="' . htmlspecialchars($record['EMAIL']) . '">';
-                    echo '<input type="hidden" name="first_name" value="' . htmlspecialchars($record['FIRST_NAME']) . '">';
-                    echo '<input type="hidden" name="last_name" value="' . htmlspecialchars($record['LAST_NAME']) . '">';
-                    echo '<input type="hidden" name="sesskey" value="' . sesskey() . '">';
-                    echo '<button type="submit" name="process" class="btn btn-primary">Process</button>';
-                    echo '</form>';
-                }
-            }
-            // Display course and user data
-            echo '<div>DATE CREATED:<br> ' . htmlspecialchars($record['date_created']) . '</div>';
-            echo '<div>COURSE STATE: <strong>' . htmlspecialchars($record['COURSE_STATE']) . '</strong></div>';
-            if(!empty($moodlecourseid)) {
-                echo '<div>Enrollment Status (Moodle): <a href="/user/index.php?id=' . $moodlecourseid . '">' . $enrol_status . '</a></div>'; 
-            } else {
-                echo '<div>Enrollment Status (Moodle): ' . $enrol_status . '</div>'; 
-            }
-            echo '<div>COURSE IDENTIFIER: <a href="/course/view.php?idnumber=' . htmlspecialchars($record['COURSE_IDENTIFIER']) . '">' . htmlspecialchars($record['COURSE_IDENTIFIER']) . '</a> - ' . $coursefullname . '</div>';
-            echo '<div>COURSE SHORTNAME: ' . htmlspecialchars($record['COURSE_SHORTNAME']) . '</div>';
-            echo '<div title="The datetime they clicked Enrol in ELM">COURSE_STATE_DATE: ' . htmlspecialchars($record['COURSE_STATE_DATE']) . '</div>';
-            
-            // If the user exists, compare the Moodle and external data for mismatches
-            if ($user) {
-                echo '<div>User Status (Moodle): <a href="/user/view.php?id=' . $user->id . '">' . $user_status . '</a></div>';
-                echo '<div>FIRST NAME: ' . htmlspecialchars($record['FIRST_NAME']) . '</div>';
-                echo '<div>LAST NAME: ' . htmlspecialchars($record['LAST_NAME']) . '</div>';
-                echo '<div>EMAIL: (cdata) ' . htmlspecialchars($record['EMAIL']) . '</div>';
-                echo '<div>EMAIL: (moodle) ' . htmlspecialchars($user->email) . '</div>';
-                
-                // Check for email mismatch
-                if (strtolower($record['EMAIL']) != strtolower($user->email)) {
-                    echo '<div class="alert alert-warning"><strong>Email mismatch!</strong></div>';
-                }
-                
-                echo '<div>GUID: (cdata) ';
-                echo '<a href="/local/psaelmsync/dashboard.php?search=' . htmlspecialchars($record['GUID']) . '">';
-                echo htmlspecialchars($record['GUID']);
-                echo '</a></div>';
-                echo '<div>GUID: (moodle) ' . htmlspecialchars($user->idnumber) . '</div>';
-                
-                // Check for GUID mismatch
-                if ($record['GUID'] != $user->idnumber) {
-                    echo '<div class="alert alert-warning"><strong>GUID mismatch!</strong></div>';
-                }
-            } else {
-                // If the user doesn't exist, just show external data (no Moodle comparisons)
-                echo '<div>User Status: ' . $user_status . '</div>';
-                echo '<div>FIRST NAME: ' . htmlspecialchars($record['FIRST_NAME']) . '</div>';
-                echo '<div>LAST NAME: ' . htmlspecialchars($record['LAST_NAME']) . '</div>';
-                echo '<div>EMAIL: (cdata) ' . htmlspecialchars($record['EMAIL']) . '</div>';
-                echo '<div>GUID: (cdata) ';
-                echo '<a href="/local/psaelmsync/dashboard.php?search=' . htmlspecialchars($record['GUID']) . '">';
-                echo htmlspecialchars($record['GUID']);
-                echo '</a></div>';
-            }
+<!-- Enhanced Filter Form -->
+<div class="manual-intake-filters">
+    <form method="get" action="<?php echo $PAGE->url; ?>">
+        <div class="row">
+            <div class="col-md-2">
+                <div class="form-group">
+                    <label for="from">From Date</label>
+                    <input type="datetime-local" id="from" name="from" class="form-control form-control-sm"
+                           value="<?php echo s($filter_from); ?>">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-group">
+                    <label for="to">To Date</label>
+                    <input type="datetime-local" id="to" name="to" class="form-control form-control-sm"
+                           value="<?php echo s($filter_to); ?>">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" class="form-control form-control-sm"
+                           value="<?php echo s($filter_email); ?>" placeholder="user@example.com">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-group">
+                    <label for="guid">GUID</label>
+                    <input type="text" id="guid" name="guid" class="form-control form-control-sm"
+                           value="<?php echo s($filter_guid); ?>" placeholder="5F421FC1A510...">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-group">
+                    <label for="course">Course ID/Shortname</label>
+                    <input type="text" id="course" name="course" class="form-control form-control-sm"
+                           value="<?php echo s($filter_course); ?>" placeholder="40972 or ITEM-2625-1">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-group">
+                    <label for="state">CData State</label>
+                    <select id="state" name="state" class="form-control form-control-sm">
+                        <option value="">All</option>
+                        <option value="Enrol" <?php echo $filter_state === 'Enrol' ? 'selected' : ''; ?>>Enrol</option>
+                        <option value="Suspend" <?php echo $filter_state === 'Suspend' ? 'selected' : ''; ?>>Suspend</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="row mt-2">
+            <div class="col-md-2">
+                <div class="form-group">
+                    <label for="status">Record Status</label>
+                    <select id="status" name="status" class="form-control form-control-sm">
+                        <option value="">All</option>
+                        <option value="ready" <?php echo $filter_status === 'ready' ? 'selected' : ''; ?>>Ready to Process</option>
+                        <option value="new_user" <?php echo $filter_status === 'new_user' ? 'selected' : ''; ?>>New User</option>
+                        <option value="mismatch" <?php echo $filter_status === 'mismatch' ? 'selected' : ''; ?>>Email Mismatch</option>
+                        <option value="blocked" <?php echo $filter_status === 'blocked' ? 'selected' : ''; ?>>Blocked</option>
+                        <option value="done" <?php echo $filter_status === 'done' ? 'selected' : ''; ?>>Already Done</option>
+                    </select>
+                </div>
+            </div>
+            <div class="col-md-10">
+                <div class="filter-actions">
+                    <button type="submit" class="btn btn-primary btn-sm">Search CData</button>
+                    <a href="<?php echo $PAGE->url; ?>" class="btn btn-secondary btn-sm">Clear Filters</a>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
 
-            // Display existing logs if any
-            if (!empty($logs)) {
-                echo '<div class=""><strong>Existing logs for this course</strong></div>';
-                foreach ($logs as $l) {
-                    $iso8601 = date('Y-m-d H:i:s', (int) $l->timestamp);
-                    echo '<div class="p-2 m-1 bg-white rounded-lg">';
-                    echo '<a href="/local/psaelmsync/dashboard.php?search=' . urlencode($iso8601) . '">';
-                    echo $iso8601 . ' - ' . $l->action . ' - ' . $l->user_email . ' - ' . $l->user_guid;
-                    echo '</a></div>';
-                }
-            } else {
-                echo '<div class="alert alert-secondary">No matching logs found.</div>';
-            }
+<?php if (!empty($apiurlfiltered)): ?>
+<div class="query-debug">
+    <strong>API Query:</strong>
+    <code><?php echo htmlspecialchars($apiurlfiltered); ?></code>
+    <a href="<?php echo $apiurlfiltered; ?>" class="btn btn-sm btn-outline-secondary ml-2" target="_blank">Open in browser</a>
+    <small class="text-muted">(VPN + IP whitelist required)</small>
+</div>
+<?php endif; ?>
 
-            
-
-            echo '</div>';
-            echo '</div>';
-        }
-        echo '</div>';
-    } else {
-        echo '<div class="alert alert-warning">No data found for the selected dates.</div>';
+<?php if (!empty($processed_records)): ?>
+    <?php
+    // Calculate summary counts
+    $status_counts = ['ready' => 0, 'new_user' => 0, 'mismatch' => 0, 'blocked' => 0, 'done' => 0];
+    foreach ($processed_records as $pr) {
+        $status_counts[$pr['status_info']['status']]++;
     }
-}
+    ?>
 
+    <div class="results-summary">
+        <div class="summary-item"><strong><?php echo count($processed_records); ?></strong> records found</div>
+        <?php if ($status_counts['ready'] > 0): ?>
+            <div class="summary-item text-success"><strong><?php echo $status_counts['ready']; ?></strong> ready</div>
+        <?php endif; ?>
+        <?php if ($status_counts['new_user'] > 0): ?>
+            <div class="summary-item text-info"><strong><?php echo $status_counts['new_user']; ?></strong> new users</div>
+        <?php endif; ?>
+        <?php if ($status_counts['mismatch'] > 0): ?>
+            <div class="summary-item text-warning"><strong><?php echo $status_counts['mismatch']; ?></strong> mismatches</div>
+        <?php endif; ?>
+        <?php if ($status_counts['blocked'] > 0): ?>
+            <div class="summary-item text-danger"><strong><?php echo $status_counts['blocked']; ?></strong> blocked</div>
+        <?php endif; ?>
+        <?php if ($status_counts['done'] > 0): ?>
+            <div class="summary-item text-secondary"><strong><?php echo $status_counts['done']; ?></strong> already done</div>
+        <?php endif; ?>
+    </div>
+
+    <table class="table table-bordered record-table">
+        <thead>
+            <tr>
+                <th style="width: 30px;"></th>
+                <th>Status</th>
+                <th>User</th>
+                <th>Course</th>
+                <th>CData State</th>
+                <th>Date Created</th>
+                <th style="width: 100px;">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($processed_records as $index => $pr):
+            $record = $pr['record'];
+            $user = $pr['user'];
+            $course = $pr['course'];
+            $status_info = $pr['status_info'];
+            $is_enrolled = $pr['is_enrolled'];
+        ?>
+            <tr class="record-row" data-index="<?php echo $index; ?>">
+                <td class="text-center"><span class="expand-icon">▶</span></td>
+                <td>
+                    <span class="badge badge-<?php echo $status_info['class']; ?> status-badge">
+                        <?php echo $status_info['icon']; ?> <?php echo $status_info['label']; ?>
+                    </span>
+                </td>
+                <td>
+                    <?php echo htmlspecialchars($record['FIRST_NAME'] . ' ' . $record['LAST_NAME']); ?>
+                    <br><small class="text-muted"><?php echo htmlspecialchars($record['EMAIL']); ?></small>
+                </td>
+                <td>
+                    <?php if ($course): ?>
+                        <a href="/course/view.php?id=<?php echo $course->id; ?>" target="_blank">
+                            <?php echo htmlspecialchars($course->fullname); ?>
+                        </a>
+                        <br><small class="text-muted"><?php echo htmlspecialchars($record['COURSE_SHORTNAME']); ?></small>
+                    <?php else: ?>
+                        <span class="text-danger">Not found</span>
+                        <br><small class="text-muted">ID: <?php echo htmlspecialchars($record['COURSE_IDENTIFIER']); ?></small>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <span class="badge badge-<?php echo $record['COURSE_STATE'] === 'Enrol' ? 'primary' : 'secondary'; ?>">
+                        <?php echo htmlspecialchars($record['COURSE_STATE']); ?>
+                    </span>
+                </td>
+                <td>
+                    <small><?php echo htmlspecialchars(substr($record['date_created'], 0, 16)); ?></small>
+                </td>
+                <td>
+                    <?php if ($status_info['can_process']): ?>
+                        <form method="post" action="<?php echo $PAGE->url; ?>" class="d-inline process-form">
+                            <input type="hidden" name="elm_course_id" value="<?php echo htmlspecialchars($record['COURSE_IDENTIFIER']); ?>">
+                            <input type="hidden" name="elm_enrolment_id" value="<?php echo htmlspecialchars($record['ENROLMENT_ID']); ?>">
+                            <input type="hidden" name="record_date_created" value="<?php echo htmlspecialchars($record['date_created']); ?>">
+                            <input type="hidden" name="course_state" value="<?php echo htmlspecialchars($record['COURSE_STATE']); ?>">
+                            <input type="hidden" name="class_code" value="<?php echo htmlspecialchars($record['COURSE_SHORTNAME']); ?>">
+                            <input type="hidden" name="guid" value="<?php echo htmlspecialchars($record['GUID']); ?>">
+                            <input type="hidden" name="email" value="<?php echo htmlspecialchars($record['EMAIL']); ?>">
+                            <input type="hidden" name="first_name" value="<?php echo htmlspecialchars($record['FIRST_NAME']); ?>">
+                            <input type="hidden" name="last_name" value="<?php echo htmlspecialchars($record['LAST_NAME']); ?>">
+                            <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                            <!-- Preserve filter state -->
+                            <input type="hidden" name="from" value="<?php echo s($filter_from); ?>">
+                            <input type="hidden" name="to" value="<?php echo s($filter_to); ?>">
+                            <input type="hidden" name="email_filter" value="<?php echo s($filter_email); ?>">
+                            <input type="hidden" name="guid_filter" value="<?php echo s($filter_guid); ?>">
+                            <input type="hidden" name="course_filter" value="<?php echo s($filter_course); ?>">
+                            <input type="hidden" name="state" value="<?php echo s($filter_state); ?>">
+                            <input type="hidden" name="status" value="<?php echo s($filter_status); ?>">
+                            <button type="submit" name="process" class="btn btn-sm btn-success">
+                                <?php echo $record['COURSE_STATE']; ?>
+                            </button>
+                        </form>
+                    <?php else: ?>
+                        <span class="text-muted">—</span>
+                    <?php endif; ?>
+                </td>
+            </tr>
+            <tr class="record-details" data-index="<?php echo $index; ?>">
+                <td colspan="7">
+                    <div class="diff-container">
+                        <div class="diff-panel">
+                            <h6>CData Record</h6>
+                            <div class="diff-row">
+                                <span class="label">Email:</span>
+                                <span class="value"><?php echo htmlspecialchars($record['EMAIL']); ?></span>
+                            </div>
+                            <div class="diff-row">
+                                <span class="label">Name:</span>
+                                <span class="value"><?php echo htmlspecialchars($record['FIRST_NAME'] . ' ' . $record['LAST_NAME']); ?></span>
+                            </div>
+                            <div class="diff-row">
+                                <span class="label">GUID:</span>
+                                <span class="value"><code><?php echo htmlspecialchars($record['GUID']); ?></code></span>
+                            </div>
+                            <div class="diff-row">
+                                <span class="label">OPRID:</span>
+                                <span class="value"><?php echo htmlspecialchars($record['OPRID'] ?? '—'); ?></span>
+                            </div>
+                            <div class="diff-row">
+                                <span class="label">User State:</span>
+                                <span class="value"><?php echo htmlspecialchars($record['USER_STATE'] ?? '—'); ?></span>
+                            </div>
+                            <hr>
+                            <div class="diff-row">
+                                <span class="label">Course ID:</span>
+                                <span class="value"><?php echo htmlspecialchars($record['COURSE_IDENTIFIER']); ?></span>
+                            </div>
+                            <div class="diff-row">
+                                <span class="label">Course Shortname:</span>
+                                <span class="value"><?php echo htmlspecialchars($record['COURSE_SHORTNAME']); ?></span>
+                            </div>
+                            <div class="diff-row">
+                                <span class="label">Course Name:</span>
+                                <span class="value"><?php echo htmlspecialchars($record['COURSE_LONG_NAME'] ?? '—'); ?></span>
+                            </div>
+                            <div class="diff-row">
+                                <span class="label">Requested Action:</span>
+                                <span class="value"><strong><?php echo htmlspecialchars($record['COURSE_STATE']); ?></strong></span>
+                            </div>
+                            <hr>
+                            <div class="diff-row">
+                                <span class="label">State Date:</span>
+                                <span class="value"><?php echo htmlspecialchars($record['COURSE_STATE_DATE'] ?? '—'); ?></span>
+                            </div>
+                            <div class="diff-row">
+                                <span class="label">Record Created:</span>
+                                <span class="value"><?php echo htmlspecialchars($record['date_created']); ?></span>
+                            </div>
+                            <div class="diff-row">
+                                <span class="label">Enrolment ID:</span>
+                                <span class="value"><?php echo htmlspecialchars($record['ENROLMENT_ID'] ?? '—'); ?></span>
+                            </div>
+                        </div>
+
+                        <div class="diff-panel">
+                            <h6>Moodle State</h6>
+                            <?php if ($user): ?>
+                                <div class="diff-row">
+                                    <span class="label">Email:</span>
+                                    <span class="value <?php echo strtolower($user->email) === strtolower($record['EMAIL']) ? 'diff-match' : 'diff-mismatch'; ?>">
+                                        <?php echo htmlspecialchars($user->email); ?>
+                                        <?php echo strtolower($user->email) === strtolower($record['EMAIL']) ? '✓' : '✗ MISMATCH'; ?>
+                                    </span>
+                                </div>
+                                <div class="diff-row">
+                                    <span class="label">Name:</span>
+                                    <span class="value"><?php echo htmlspecialchars($user->firstname . ' ' . $user->lastname); ?></span>
+                                </div>
+                                <div class="diff-row">
+                                    <span class="label">GUID:</span>
+                                    <span class="value <?php echo $user->idnumber === $record['GUID'] ? 'diff-match' : 'diff-mismatch'; ?>">
+                                        <code><?php echo htmlspecialchars($user->idnumber); ?></code>
+                                        <?php echo $user->idnumber === $record['GUID'] ? '✓' : '✗'; ?>
+                                    </span>
+                                </div>
+                                <div class="diff-row">
+                                    <span class="label">Moodle User ID:</span>
+                                    <span class="value">
+                                        <a href="/user/view.php?id=<?php echo $user->id; ?>" target="_blank"><?php echo $user->id; ?></a>
+                                    </span>
+                                </div>
+                            <?php else: ?>
+                                <div class="diff-row">
+                                    <span class="value diff-new">User does not exist — will be created</span>
+                                </div>
+                            <?php endif; ?>
+
+                            <hr>
+
+                            <?php if ($course): ?>
+                                <div class="diff-row">
+                                    <span class="label">Course Found:</span>
+                                    <span class="value diff-match">
+                                        <a href="/course/view.php?id=<?php echo $course->id; ?>" target="_blank">
+                                            <?php echo htmlspecialchars($course->fullname); ?>
+                                        </a> ✓
+                                    </span>
+                                </div>
+                                <div class="diff-row">
+                                    <span class="label">Moodle Course ID:</span>
+                                    <span class="value"><?php echo $course->id; ?></span>
+                                </div>
+                                <div class="diff-row">
+                                    <span class="label">Currently Enrolled:</span>
+                                    <span class="value">
+                                        <?php if ($user): ?>
+                                            <?php echo $is_enrolled ? '<span class="text-success">Yes</span>' : '<span class="text-muted">No</span>'; ?>
+                                            <?php if ($is_enrolled): ?>
+                                                <a href="/user/index.php?id=<?php echo $course->id; ?>" target="_blank" class="ml-2">(View enrolled users)</a>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <span class="text-muted">N/A (user doesn't exist)</span>
+                                        <?php endif; ?>
+                                    </span>
+                                </div>
+                            <?php else: ?>
+                                <div class="diff-row">
+                                    <span class="value diff-mismatch">Course not found in Moodle ✗</span>
+                                </div>
+                            <?php endif; ?>
+
+                            <div class="status-reason">
+                                <strong>Status:</strong> <?php echo $status_info['reason']; ?>
+                            </div>
+
+                            <?php
+                            // Show existing logs for this user/course combo
+                            if ($user && $course) {
+                                $logs = $DB->get_records('local_psaelmsync_logs',
+                                    ['elm_course_id' => $record['COURSE_IDENTIFIER'], 'user_id' => $user->id],
+                                    'timestamp DESC',
+                                    'id, timestamp, action, status',
+                                    0, 5);
+                                if (!empty($logs)):
+                            ?>
+                            <div class="existing-logs">
+                                <h6>Recent Sync Logs (this user + course)</h6>
+                                <?php foreach ($logs as $log): ?>
+                                    <div class="log-entry">
+                                        <?php echo date('Y-m-d H:i', $log->timestamp); ?> —
+                                        <?php echo htmlspecialchars($log->action); ?> —
+                                        <span class="<?php echo $log->status === 'Success' ? 'text-success' : 'text-danger'; ?>">
+                                            <?php echo htmlspecialchars($log->status); ?>
+                                        </span>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <?php
+                                endif;
+                            }
+                            ?>
+                        </div>
+                    </div>
+
+                    <div class="action-buttons">
+                        <?php if ($user): ?>
+                            <a href="/user/view.php?id=<?php echo $user->id; ?>" class="btn btn-sm btn-outline-primary" target="_blank">View User</a>
+                        <?php endif; ?>
+                        <?php if ($course): ?>
+                            <a href="/course/view.php?id=<?php echo $course->id; ?>" class="btn btn-sm btn-outline-primary" target="_blank">View Course</a>
+                            <a href="/user/index.php?id=<?php echo $course->id; ?>" class="btn btn-sm btn-outline-secondary" target="_blank">Course Participants</a>
+                        <?php endif; ?>
+                        <a href="/local/psaelmsync/dashboard.php?search=<?php echo urlencode($record['GUID']); ?>" class="btn btn-sm btn-outline-secondary" target="_blank">Search Logs by GUID</a>
+                    </div>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+
+<?php elseif (!empty($apiurlfiltered)): ?>
+    <div class="alert alert-info">No records found matching your filters.</div>
+<?php else: ?>
+    <div class="alert alert-secondary">
+        <strong>How to use:</strong> Enter search criteria above to query CData for enrolment records.
+        You can search by email, GUID, course, date range, or any combination.
+        <br><br>
+        <strong>Status meanings:</strong>
+        <ul class="mb-0 mt-2">
+            <li><span class="badge badge-success">Ready</span> — Can be processed immediately</li>
+            <li><span class="badge badge-info">New User</span> — User will be created, then enrolled</li>
+            <li><span class="badge badge-warning">Email Mismatch</span> — Email in CData doesn't match Moodle; needs investigation</li>
+            <li><span class="badge badge-danger">Blocked</span> — Cannot process (usually course not found)</li>
+            <li><span class="badge badge-secondary">Already Done</span> — Already processed or no action needed</li>
+        </ul>
+    </div>
+<?php endif; ?>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Toggle row expansion
+    document.querySelectorAll('.record-row').forEach(function(row) {
+        row.addEventListener('click', function(e) {
+            // Don't toggle if clicking on a form button or link
+            if (e.target.closest('form') || e.target.closest('a')) {
+                return;
+            }
+
+            var index = this.dataset.index;
+            var detailsRow = document.querySelector('.record-details[data-index="' + index + '"]');
+
+            this.classList.toggle('expanded');
+            detailsRow.classList.toggle('show');
+        });
+    });
+
+    // Prevent form submission from triggering row expansion
+    document.querySelectorAll('.process-form').forEach(function(form) {
+        form.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+    });
+});
+</script>
+
+<?php
 echo $OUTPUT->footer();
