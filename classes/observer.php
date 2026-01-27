@@ -98,7 +98,7 @@ class observer {
                                 }
                             }
                             // Now stop processing because we don't have enough info to proceed.
-                            exit;
+                            return;
                         }
 
                         $elm_enrolment_id = $deets->elm_enrolment_id;

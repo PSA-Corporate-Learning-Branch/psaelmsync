@@ -365,10 +365,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['post_completion'])) {
         $result = post_completion_to_cdata($user, $course, $enrolment_record);
 
         if ($result['success']) {
-            $feedback = "Completion posted successfully for {$user->firstname} {$user->lastname} in {$course->fullname}.";
+            $feedback = "Completion posted successfully for " . s($user->firstname) . " " . s($user->lastname) . " in " . s($course->fullname) . ".";
             $feedback_type = 'success';
         } else {
-            $feedback = "Failed to post completion. HTTP {$result['http_code']}: {$result['error']}";
+            $feedback = "Failed to post completion. HTTP " . s($result['http_code']) . ": " . s($result['error']);
             if ($result['response']) {
                 $feedback .= "<br><small>Response: " . htmlspecialchars(substr($result['response'], 0, 500)) . "</small>";
             }
@@ -534,8 +534,8 @@ echo $OUTPUT->header();
 </ul>
 
 <?php if (!empty($feedback)): ?>
-<div class="alert alert-<?php echo $feedback_type; ?> alert-dismissible fade show" role="alert">
-    <?php echo $feedback; ?>
+<div class="alert alert-<?php echo s($feedback_type); ?> alert-dismissible fade show" role="alert">
+    <?php echo $feedback; // Contains intentional HTML; user data is escaped at construction ?>
     <button type="button" class="close" data-dismiss="alert" aria-label="Close">
         <span aria-hidden="true">&times;</span>
     </button>

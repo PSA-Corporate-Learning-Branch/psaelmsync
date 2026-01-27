@@ -204,7 +204,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
         $course = $DB->get_record('course', ['idnumber' => $elm_course_id]);
 
         if (!$course) {
-            $feedback = "Course with ELM ID {$elm_course_id} not found in Moodle.";
+            $feedback = "Course with ELM ID " . s($elm_course_id) . " not found in Moodle.";
             $feedback_type = 'danger';
         } else {
             $user = $DB->get_record('user', ['idnumber' => $user_guid]);
@@ -215,10 +215,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
                 if (!$user) {
                     $useremailcheck = $DB->get_record('user', ['email' => $user_email]);
                     if ($useremailcheck) {
-                        $feedback = "Failed to create user. An account with email {$user_email} already exists. ";
+                        $feedback = "Failed to create user. An account with email " . s($user_email) . " already exists. ";
                         $feedback .= "<a href='/user/view.php?id={$useremailcheck->id}' target='_blank'>View existing account</a>";
                     } else {
-                        $feedback = "Failed to create a new user for GUID {$user_guid}.";
+                        $feedback = "Failed to create a new user for GUID " . s($user_guid) . ".";
                     }
                     $feedback_type = 'danger';
                 }
@@ -227,7 +227,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
             if ($user) {
                 // Check for email mismatch
                 if (strtolower($user->email) !== strtolower($user_email)) {
-                    $feedback = "Email mismatch: Moodle has '{$user->email}' but CData has '{$user_email}'. ";
+                    $feedback = "Email mismatch: Moodle has '" . s($user->email) . "' but CData has '" . s($user_email) . "'. ";
                     $useremailcheck = $DB->get_record('user', ['email' => $user_email]);
                     if ($useremailcheck) {
                         $feedback .= "Another account exists with the CData email: ";
@@ -273,12 +273,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
 
                                 $DB->insert_record('local_psaelmsync_logs', $log);
 
-                                $feedback = "Successfully enrolled {$user->email} in {$course->fullname}.";
+                                $feedback = "Successfully enrolled " . s($user->email) . " in " . s($course->fullname) . ".";
                                 $feedback_type = 'success';
 
                                 send_welcome_email($user, $course);
                             } else {
-                                $feedback = "Failed to enrol {$user->email} in the course.";
+                                $feedback = "Failed to enrol " . s($user->email) . " in the course.";
                                 $feedback_type = 'danger';
                             }
                         } elseif ($course_state === 'Suspend') {
@@ -304,10 +304,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
 
                             $DB->insert_record('local_psaelmsync_logs', $log);
 
-                            $feedback = "Successfully suspended {$user->email} from {$course->fullname}.";
+                            $feedback = "Successfully suspended " . s($user->email) . " from " . s($course->fullname) . ".";
                             $feedback_type = 'success';
                         } else {
-                            $feedback = "Invalid course state: {$course_state}";
+                            $feedback = "Invalid course state: " . s($course_state);
                             $feedback_type = 'danger';
                         }
                     } else {
@@ -788,8 +788,8 @@ echo $OUTPUT->header();
 </ul>
 
 <?php if (!empty($feedback)): ?>
-<div class="alert alert-<?php echo $feedback_type; ?> alert-dismissible fade show" role="alert">
-    <?php echo $feedback; ?>
+<div class="alert alert-<?php echo s($feedback_type); ?> alert-dismissible fade show" role="alert">
+    <?php echo $feedback; // Contains intentional HTML links; user data is escaped at construction ?>
     <button type="button" class="close" data-dismiss="alert" aria-label="Close">
         <span aria-hidden="true">&times;</span>
     </button>

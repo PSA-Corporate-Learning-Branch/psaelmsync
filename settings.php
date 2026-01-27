@@ -18,10 +18,10 @@ if ($hassiteconfig) {
         get_string('apiurl_desc', 'local_psaelmsync'), 
         '', PARAM_URL));
 
-    $settings->add(new admin_setting_configtext('local_psaelmsync/apitoken', 
-        get_string('apitoken', 'local_psaelmsync'), 
-        get_string('apitoken_desc', 'local_psaelmsync'), 
-        '', PARAM_TEXT));
+    $settings->add(new admin_setting_configpasswordunmask('local_psaelmsync/apitoken',
+        get_string('apitoken', 'local_psaelmsync'),
+        get_string('apitoken_desc', 'local_psaelmsync'),
+        ''));
     
     $settings->add(new admin_setting_configtext('local_psaelmsync/datefilterminutes', 
         get_string('datefilterminutes', 'local_psaelmsync'), 
@@ -39,11 +39,11 @@ if ($hassiteconfig) {
         get_string('completion_apiurl_desc', 'local_psaelmsync'),
         '', PARAM_URL));
 
-    $settings->add(new admin_setting_configtext(
+    $settings->add(new admin_setting_configpasswordunmask(
         'local_psaelmsync/completion_apitoken',
         get_string('completion_apitoken', 'local_psaelmsync'),
         get_string('completion_apitoken_desc', 'local_psaelmsync'),
-        '', PARAM_ALPHANUMEXT));
+        ''));
     
     $settings->add(new admin_setting_configtext(
         'local_psaelmsync/notificationemails',

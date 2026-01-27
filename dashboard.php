@@ -9,7 +9,7 @@ $context = context_system::instance();
 require_capability('local/psaelmsync:viewlogs', $context);
 
 // Get search param early so we can include it in the page URL
-$search = optional_param('search', '', PARAM_RAW);
+$search = optional_param('search', '', PARAM_TEXT);
 
 $pageurl = new moodle_url('/local/psaelmsync/dashboard.php');
 if (!empty($search)) {
