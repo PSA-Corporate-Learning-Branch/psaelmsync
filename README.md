@@ -4,8 +4,8 @@ A Moodle local plugin that synchronizes course enrollment data between an extern
 
 ## Requirements
 
-- Moodle 3.11+ (tested up to 4.3)
-- PHP 7.4+ (tested up to 8.2)
+- Moodle 3.11+ (tested up to 4.5)
+- PHP 7.4+ (tested up to 8.4)
 
 ## Features
 
