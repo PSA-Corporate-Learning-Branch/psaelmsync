@@ -225,7 +225,8 @@ $totals = $DB->get_record_sql($sql);
     <div class="info-content">
         <p class="mb-2">The cron job for intake (from CData) happens every 5 minutes, starting on the 2nd minute of the hour,
              (ELM posts to CData every 5 minutes on the 0) between the hours of 06:00 and 18:00;<br>
-             <pre>2,7,12,17,22,27,32,37,42,47,52,57</pre></p>
+             <pre>2,7,12,17,22,27,32,37,42,47,52,57</pre>
+        </p>
         <!-- <p class="mb-0">At most, there will be 72 intake runs a day (6 an hour for 12 hours). This page shows the past 100 runs, with each page representing about a day and a half worth of enrolment data.</p> -->
     </div>
 </details>
