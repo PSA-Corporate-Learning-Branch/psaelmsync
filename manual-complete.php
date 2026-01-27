@@ -509,29 +509,42 @@ echo $OUTPUT->header();
     background: #f8d7da;
     border: 1px solid #f5c6cb;
 }
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
 </style>
 
 <!-- Tabbed Navigation -->
-<ul class="nav nav-tabs mb-3">
-    <li class="nav-item">
-        <a class="nav-link" href="/admin/settings.php?section=local_psaelmsync">Settings</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/dashboard.php">Learner Dashboard</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/dashboard-courses.php">Course Dashboard</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/dashboard-intake.php">Intake Run Dashboard</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/manual-intake.php">Manual Intake</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link active" href="/local/psaelmsync/manual-complete.php">Manual Complete</a>
-    </li>
-</ul>
+<nav aria-label="PSA ELM Sync sections">
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link" href="/admin/settings.php?section=local_psaelmsync">Settings</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/dashboard.php">Learner Dashboard</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/dashboard-courses.php">Course Dashboard</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/dashboard-intake.php">Intake Run Dashboard</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/manual-intake.php">Manual Intake</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link active" href="/local/psaelmsync/manual-complete.php" aria-current="page">Manual Complete</a>
+        </li>
+    </ul>
+</nav>
 
 <?php if (!empty($feedback)): ?>
 <div class="alert alert-<?php echo s($feedback_type); ?> alert-dismissible fade show" role="alert">
@@ -561,9 +574,10 @@ echo $OUTPUT->header();
             </div>
         <?php else: ?>
             <p class="text-muted mb-2">Search for courses with completion reporting enabled.</p>
-            <form method="get" action="<?php echo $PAGE->url; ?>" class="mb-2">
+            <form method="get" action="<?php echo $PAGE->url; ?>" class="mb-2" role="search">
+                <label for="course-search" class="sr-only">Search for courses</label>
                 <div class="input-group">
-                    <input type="text" name="course_search" class="form-control"
+                    <input type="text" id="course-search" name="course_search" class="form-control"
                            placeholder="Search by course name, shortname, or ELM ID..."
                            value="<?php echo s($course_search); ?>" autofocus>
                     <div class="input-group-append">
@@ -617,10 +631,11 @@ echo $OUTPUT->header();
             </div>
         <?php else: ?>
             <p class="text-muted mb-2">Search for users enrolled in this course.</p>
-            <form method="get" action="<?php echo $PAGE->url; ?>" class="mb-2">
+            <form method="get" action="<?php echo $PAGE->url; ?>" class="mb-2" role="search">
                 <input type="hidden" name="course_id" value="<?php echo $selected_course->id; ?>">
+                <label for="user-search" class="sr-only">Search for enrolled users</label>
                 <div class="input-group">
-                    <input type="text" name="user_search" class="form-control"
+                    <input type="text" id="user-search" name="user_search" class="form-control"
                            placeholder="Search by name, email, or GUID..."
                            value="<?php echo s($user_search); ?>" autofocus>
                     <div class="input-group-append">
@@ -694,7 +709,7 @@ echo $OUTPUT->header();
                         </div>
                         <div class="detail-row">
                             <span class="label">Moodle ID:</span>
-                            <span><a href="/user/view.php?id=<?php echo $selected_user->id; ?>" target="_blank"><?php echo $selected_user->id; ?></a></span>
+                            <span><a href="/user/view.php?id=<?php echo $selected_user->id; ?>" target="_blank" ><?php echo $selected_user->id; ?><span class="sr-only"> (opens in new window)</span></a></span>
                         </div>
                     </div>
                     <div class="detail-panel">
@@ -713,7 +728,7 @@ echo $OUTPUT->header();
                         </div>
                         <div class="detail-row">
                             <span class="label">Moodle ID:</span>
-                            <span><a href="/course/view.php?id=<?php echo $selected_course->id; ?>" target="_blank"><?php echo $selected_course->id; ?></a></span>
+                            <span><a href="/course/view.php?id=<?php echo $selected_course->id; ?>" target="_blank" ><?php echo $selected_course->id; ?><span class="sr-only"> (opens in new window)</span></a></span>
                         </div>
                     </div>
                 </div>
@@ -876,9 +891,9 @@ echo $OUTPUT->header();
 
             <div class="mt-3">
                 <a href="/local/psaelmsync/dashboard.php?search=<?php echo urlencode($selected_user->idnumber); ?>"
-                   class="btn btn-sm btn-outline-secondary" target="_blank">View all sync logs for this user</a>
+                   class="btn btn-sm btn-outline-secondary" target="_blank" >View all sync logs for this user<span class="sr-only"> (opens in new window)</span></a>
                 <a href="/report/completion/index.php?course=<?php echo $selected_course->id; ?>"
-                   class="btn btn-sm btn-outline-secondary" target="_blank">Course completion report</a>
+                   class="btn btn-sm btn-outline-secondary" target="_blank" >Course completion report<span class="sr-only"> (opens in new window)</span></a>
             </div>
         <?php endif; ?>
     </div>

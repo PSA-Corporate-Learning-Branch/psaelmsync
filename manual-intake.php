@@ -763,29 +763,46 @@ echo $OUTPUT->header();
     height: 18px;
     cursor: pointer;
 }
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+.record-row:focus {
+    outline: 2px solid #007bff;
+    outline-offset: -2px;
+}
 </style>
 
 <!-- Tabbed Navigation -->
-<ul class="nav nav-tabs mb-3">
-    <li class="nav-item">
-        <a class="nav-link" href="/admin/settings.php?section=local_psaelmsync">Settings</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/dashboard.php">Learner Dashboard</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/dashboard-courses.php">Course Dashboard</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/dashboard-intake.php">Intake Run Dashboard</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link active" href="/local/psaelmsync/manual-intake.php">Manual Intake</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/manual-complete.php">Manual Complete</a>
-    </li>
-</ul>
+<nav aria-label="PSA ELM Sync sections">
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link" href="/admin/settings.php?section=local_psaelmsync">Settings</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/dashboard.php">Learner Dashboard</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/dashboard-courses.php">Course Dashboard</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/dashboard-intake.php">Intake Run Dashboard</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link active" href="/local/psaelmsync/manual-intake.php" aria-current="page">Manual Intake</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/manual-complete.php">Manual Complete</a>
+        </li>
+    </ul>
+</nav>
 
 <?php if (!empty($feedback)): ?>
 <div class="alert alert-<?php echo s($feedback_type); ?> alert-dismissible fade show" role="alert">
@@ -950,25 +967,26 @@ echo $OUTPUT->header();
             </button>
             <button type="button" class="btn btn-outline-secondary btn-sm" id="select-all-btn">Select All</button>
             <button type="button" class="btn btn-outline-secondary btn-sm" id="select-none-btn">Select None</button>
-            <span class="text-muted ml-2"><span class="selected-count"><?php echo $processable_count; ?></span> of <?php echo $processable_count; ?> processable selected</span>
+            <span class="text-muted ml-2" aria-live="polite"><span class="selected-count"><?php echo $processable_count; ?></span> of <?php echo $processable_count; ?> processable selected</span>
         </div>
     <?php endif; ?>
 
     <table class="table table-bordered record-table">
+        <caption class="sr-only">CData enrollment records for processing. Click or press Enter on a row to expand details.</caption>
         <thead>
             <tr>
                 <?php if ($processable_count > 0): ?>
-                <th style="width: 40px;" class="text-center">
-                    <input type="checkbox" id="select-all-checkbox" checked title="Select/Deselect All">
+                <th scope="col" style="width: 40px;" class="text-center">
+                    <input type="checkbox" id="select-all-checkbox" checked aria-label="Select or deselect all records">
                 </th>
                 <?php endif; ?>
-                <th style="width: 30px;"></th>
-                <th>Status</th>
-                <th>User</th>
-                <th>Course</th>
-                <th>CData State</th>
-                <th>Date Created</th>
-                <th style="width: 100px;">Action</th>
+                <th scope="col" style="width: 30px;"><span class="sr-only">Expand row</span></th>
+                <th scope="col">Status</th>
+                <th scope="col">User</th>
+                <th scope="col">Course</th>
+                <th scope="col">CData State</th>
+                <th scope="col">Date Created</th>
+                <th scope="col" style="width: 100px;">Action</th>
             </tr>
         </thead>
         <tbody>
@@ -992,7 +1010,7 @@ echo $OUTPUT->header();
                 'last_name' => $record['LAST_NAME']
             ]));
         ?>
-            <tr class="record-row" data-index="<?php echo $index; ?>">
+            <tr class="record-row" data-index="<?php echo $index; ?>" tabindex="0" role="row" aria-expanded="false" aria-controls="details-<?php echo $index; ?>" aria-label="<?php echo htmlspecialchars($record['FIRST_NAME'] . ' ' . $record['LAST_NAME'] . ', ' . $status_info['label']); ?>. Press Enter to expand.">
                 <?php if ($processable_count > 0): ?>
                 <td class="text-center checkbox-cell" onclick="event.stopPropagation();">
                     <?php if ($status_info['can_process']): ?>
@@ -1001,7 +1019,7 @@ echo $OUTPUT->header();
                     <?php endif; ?>
                 </td>
                 <?php endif; ?>
-                <td class="text-center"><span class="expand-icon">▶</span></td>
+                <td class="text-center"><span class="expand-icon" aria-hidden="true">▶</span></td>
                 <td>
                     <span class="badge badge-<?php echo $status_info['class']; ?> status-badge">
                         <?php echo $status_info['icon']; ?> <?php echo $status_info['label']; ?>
@@ -1013,8 +1031,8 @@ echo $OUTPUT->header();
                 </td>
                 <td>
                     <?php if ($course): ?>
-                        <a href="/course/view.php?id=<?php echo $course->id; ?>" target="_blank">
-                            <?php echo htmlspecialchars($course->fullname); ?>
+                        <a href="/course/view.php?id=<?php echo $course->id; ?>" target="_blank" >
+                            <?php echo htmlspecialchars($course->fullname); ?><span class="sr-only"> (opens in new window)</span>
                         </a>
                         <br><small class="text-muted"><?php echo htmlspecialchars($record['COURSE_SHORTNAME']); ?></small>
                     <?php else: ?>
@@ -1060,7 +1078,7 @@ echo $OUTPUT->header();
                     <?php endif; ?>
                 </td>
             </tr>
-            <tr class="record-details" data-index="<?php echo $index; ?>">
+            <tr class="record-details" data-index="<?php echo $index; ?>" id="details-<?php echo $index; ?>">
                 <td colspan="<?php echo $processable_count > 0 ? 8 : 7; ?>">
                     <div class="diff-container">
                         <div class="diff-panel">
@@ -1124,7 +1142,11 @@ echo $OUTPUT->header();
                                     <span class="label">Email:</span>
                                     <span class="value <?php echo strtolower($user->email) === strtolower($record['EMAIL']) ? 'diff-match' : 'diff-mismatch'; ?>">
                                         <?php echo htmlspecialchars($user->email); ?>
-                                        <?php echo strtolower($user->email) === strtolower($record['EMAIL']) ? '✓' : '✗ MISMATCH'; ?>
+                                        <?php if (strtolower($user->email) === strtolower($record['EMAIL'])): ?>
+                                            <span aria-hidden="true">✓</span><span class="sr-only">Match</span>
+                                        <?php else: ?>
+                                            <span aria-hidden="true">✗</span> MISMATCH
+                                        <?php endif; ?>
                                     </span>
                                 </div>
                                 <div class="diff-row">
@@ -1135,13 +1157,17 @@ echo $OUTPUT->header();
                                     <span class="label">GUID:</span>
                                     <span class="value <?php echo $user->idnumber === $record['GUID'] ? 'diff-match' : 'diff-mismatch'; ?>">
                                         <code><?php echo htmlspecialchars($user->idnumber); ?></code>
-                                        <?php echo $user->idnumber === $record['GUID'] ? '✓' : '✗'; ?>
+                                        <?php if ($user->idnumber === $record['GUID']): ?>
+                                            <span aria-hidden="true">✓</span><span class="sr-only">Match</span>
+                                        <?php else: ?>
+                                            <span aria-hidden="true">✗</span><span class="sr-only">Mismatch</span>
+                                        <?php endif; ?>
                                     </span>
                                 </div>
                                 <div class="diff-row">
                                     <span class="label">Moodle User ID:</span>
                                     <span class="value">
-                                        <a href="/user/view.php?id=<?php echo $user->id; ?>" target="_blank"><?php echo $user->id; ?></a>
+                                        <a href="/user/view.php?id=<?php echo $user->id; ?>" target="_blank" ><?php echo $user->id; ?><span class="sr-only"> (opens in new window)</span></a>
                                     </span>
                                 </div>
                             <?php else: ?>
@@ -1156,9 +1182,9 @@ echo $OUTPUT->header();
                                 <div class="diff-row">
                                     <span class="label">Course Found:</span>
                                     <span class="value diff-match">
-                                        <a href="/course/view.php?id=<?php echo $course->id; ?>" target="_blank">
-                                            <?php echo htmlspecialchars($course->fullname); ?>
-                                        </a> ✓
+                                        <a href="/course/view.php?id=<?php echo $course->id; ?>" target="_blank" >
+                                            <?php echo htmlspecialchars($course->fullname); ?><span class="sr-only"> (opens in new window)</span>
+                                        </a> <span aria-hidden="true">✓</span><span class="sr-only">Course found</span>
                                     </span>
                                 </div>
                                 <div class="diff-row">
@@ -1171,7 +1197,7 @@ echo $OUTPUT->header();
                                         <?php if ($user): ?>
                                             <?php echo $is_enrolled ? '<span class="text-success">Yes</span>' : '<span class="text-muted">No</span>'; ?>
                                             <?php if ($is_enrolled): ?>
-                                                <a href="/user/index.php?id=<?php echo $course->id; ?>" target="_blank" class="ml-2">(View enrolled users)</a>
+                                                <a href="/user/index.php?id=<?php echo $course->id; ?>" target="_blank"  class="ml-2">(View enrolled users<span class="sr-only"> - opens in new window</span>)</a>
                                             <?php endif; ?>
                                         <?php else: ?>
                                             <span class="text-muted">N/A (user doesn't exist)</span>
@@ -1219,13 +1245,13 @@ echo $OUTPUT->header();
 
                     <div class="action-buttons">
                         <?php if ($user): ?>
-                            <a href="/user/view.php?id=<?php echo $user->id; ?>" class="btn btn-sm btn-outline-primary" target="_blank">View User</a>
+                            <a href="/user/view.php?id=<?php echo $user->id; ?>" class="btn btn-sm btn-outline-primary" target="_blank" >View User<span class="sr-only"> (opens in new window)</span></a>
                         <?php endif; ?>
                         <?php if ($course): ?>
-                            <a href="/course/view.php?id=<?php echo $course->id; ?>" class="btn btn-sm btn-outline-primary" target="_blank">View Course</a>
-                            <a href="/user/index.php?id=<?php echo $course->id; ?>" class="btn btn-sm btn-outline-secondary" target="_blank">Course Participants</a>
+                            <a href="/course/view.php?id=<?php echo $course->id; ?>" class="btn btn-sm btn-outline-primary" target="_blank" >View Course<span class="sr-only"> (opens in new window)</span></a>
+                            <a href="/user/index.php?id=<?php echo $course->id; ?>" class="btn btn-sm btn-outline-secondary" target="_blank" >Course Participants<span class="sr-only"> (opens in new window)</span></a>
                         <?php endif; ?>
-                        <a href="/local/psaelmsync/dashboard.php?search=<?php echo urlencode($record['GUID']); ?>" class="btn btn-sm btn-outline-secondary" target="_blank">Search Logs by GUID</a>
+                        <a href="/local/psaelmsync/dashboard.php?search=<?php echo urlencode($record['GUID']); ?>" class="btn btn-sm btn-outline-secondary" target="_blank" >Search Logs by GUID<span class="sr-only"> (opens in new window)</span></a>
                     </div>
                 </td>
             </tr>
@@ -1241,6 +1267,7 @@ echo $OUTPUT->header();
             </button>
             <button type="button" class="btn btn-outline-secondary btn-sm" id="select-all-btn-bottom">Select All</button>
             <button type="button" class="btn btn-outline-secondary btn-sm" id="select-none-btn-bottom">Select None</button>
+            <span class="text-muted ml-2" aria-live="polite"><span class="selected-count"><?php echo $processable_count; ?></span> of <?php echo $processable_count; ?> processable selected</span>
         </div>
     </form>
     <?php endif; ?>
@@ -1319,18 +1346,39 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Toggle row expansion
+    function toggleRowExpansion(row) {
+        var index = row.dataset.index;
+        var detailsRow = document.querySelector('.record-details[data-index="' + index + '"]');
+        var isExpanded = row.classList.contains('expanded');
+
+        row.classList.toggle('expanded');
+        detailsRow.classList.toggle('show');
+
+        // Update ARIA state
+        row.setAttribute('aria-expanded', !isExpanded);
+    }
+
     document.querySelectorAll('.record-row').forEach(function(row) {
+        // Click handler
         row.addEventListener('click', function(e) {
             // Don't toggle if clicking on the individual process form, link, or checkbox cell
             if (e.target.closest('.process-form') || e.target.closest('a') || e.target.closest('.checkbox-cell') || e.target.closest('button')) {
                 return;
             }
+            toggleRowExpansion(this);
+        });
 
-            var index = this.dataset.index;
-            var detailsRow = document.querySelector('.record-details[data-index="' + index + '"]');
+        // Keyboard handler for accessibility
+        row.addEventListener('keydown', function(e) {
+            // Don't handle if focus is on a form element
+            if (e.target.closest('.process-form') || e.target.closest('a') || e.target.closest('.checkbox-cell') || e.target.closest('button')) {
+                return;
+            }
 
-            this.classList.toggle('expanded');
-            detailsRow.classList.toggle('show');
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggleRowExpansion(this);
+            }
         });
     });
 });

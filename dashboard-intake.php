@@ -17,26 +17,28 @@ echo $OUTPUT->header();
 ?>
 
 <!-- Tabbed Navigation -->
-<ul class="nav nav-tabs mb-3">
-    <li class="nav-item">
-        <a class="nav-link" href="/admin/settings.php?section=local_psaelmsync">Settings</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/dashboard.php">Learner Dashboard</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/dashboard-courses.php">Course Dashboard</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link active" href="/local/psaelmsync/dashboard-intake.php">Intake Run Dashboard</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/manual-intake.php">Manual Intake</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/manual-complete.php">Manual Complete</a>
-    </li>
-</ul>
+<nav aria-label="PSA ELM Sync sections">
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link" href="/admin/settings.php?section=local_psaelmsync">Settings</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/dashboard.php">Learner Dashboard</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/dashboard-courses.php">Course Dashboard</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link active" href="/local/psaelmsync/dashboard-intake.php" aria-current="page">Intake Run Dashboard</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/manual-intake.php">Manual Intake</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/manual-complete.php">Manual Complete</a>
+        </li>
+    </ul>
+</nav>
 
 <?php
 
@@ -194,6 +196,17 @@ $totals = $DB->get_record_sql($sql);
     border-radius: 0.25rem;
     font-size: 0.9rem;
 }
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
 </style>
 
 <!-- Stats Cards -->
@@ -233,19 +246,26 @@ $totals = $DB->get_record_sql($sql);
 
 <div class="row mb-2">
     <div class="col-md-12">
-        <div style="height: 320px;">
-            <canvas id="runsChart"></canvas>
-        </div>
+        <figure role="figure" aria-labelledby="chart-description">
+            <div style="height: 320px;">
+                <canvas id="runsChart" aria-hidden="true"></canvas>
+            </div>
+            <figcaption id="chart-description" class="sr-only">
+                Line chart showing enrollment, suspension, and error counts over time for recent sync runs.
+                The same data is available in the table below.
+            </figcaption>
+        </figure>
 
         <!-- Results Table -->
         <table class="table table-striped table-bordered mt-4">
+            <caption class="sr-only">Intake run history showing date, enrolments, drops, errors, and skipped counts for each sync run</caption>
             <thead>
                 <tr>
-                    <th>Date and Time</th>
-                    <th>Enrolments</th>
-                    <th>Drops</th>
-                    <th>Errors</th>
-                    <th>Skipped</th>
+                    <th scope="col">Date and Time</th>
+                    <th scope="col">Enrolments</th>
+                    <th scope="col">Drops</th>
+                    <th scope="col">Errors</th>
+                    <th scope="col">Skipped</th>
                 </tr>
             </thead>
             <tbody>

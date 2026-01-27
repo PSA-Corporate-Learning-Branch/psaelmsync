@@ -29,26 +29,28 @@ $courses = $DB->get_records_sql("
 ?>
 
 <!-- Tabbed Navigation -->
-<ul class="nav nav-tabs mb-3">
-    <li class="nav-item">
-        <a class="nav-link" href="/admin/settings.php?section=local_psaelmsync">Settings</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/dashboard.php">Learner Dashboard</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link active" href="/local/psaelmsync/dashboard-courses.php">Course Dashboard</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/dashboard-intake.php">Intake Run Dashboard</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/manual-intake.php">Manual Intake</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/manual-complete.php">Manual Complete</a>
-    </li>
-</ul>
+<nav aria-label="PSA ELM Sync sections">
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link" href="/admin/settings.php?section=local_psaelmsync">Settings</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/dashboard.php">Learner Dashboard</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link active" href="/local/psaelmsync/dashboard-courses.php" aria-current="page">Course Dashboard</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/dashboard-intake.php">Intake Run Dashboard</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/manual-intake.php">Manual Intake</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/manual-complete.php">Manual Complete</a>
+        </li>
+    </ul>
+</nav>
 
 <p>This dashboard is a work in progress. It is only meant to give a count of the 
     log records that have come through CData and does not reflect the actual number
@@ -56,15 +58,16 @@ $courses = $DB->get_records_sql("
 
 <!-- Results Table -->
 <table class="table table-striped table-bordered">
+    <caption class="sr-only">Course enrollment statistics from CData sync logs</caption>
     <thead>
         <tr>
-            <th><?php echo get_string('course', 'local_psaelmsync'); ?></th>
-            <th><?php echo get_string('idnumber', 'local_psaelmsync'); ?></th>
-            <th><?php echo get_string('completion_opt_in', 'local_psaelmsync'); ?></th>
-            <th><?php echo get_string('completions', 'local_psaelmsync'); ?></th>
-            <th><?php echo get_string('enrolments', 'local_psaelmsync'); ?></th>
-            <th><?php echo get_string('suspends', 'local_psaelmsync'); ?></th>
-            <th><?php echo get_string('errors', 'local_psaelmsync'); ?></th>
+            <th scope="col"><?php echo get_string('course', 'local_psaelmsync'); ?></th>
+            <th scope="col"><?php echo get_string('idnumber', 'local_psaelmsync'); ?></th>
+            <th scope="col"><?php echo get_string('completion_opt_in', 'local_psaelmsync'); ?></th>
+            <th scope="col"><?php echo get_string('completions', 'local_psaelmsync'); ?></th>
+            <th scope="col"><?php echo get_string('enrolments', 'local_psaelmsync'); ?></th>
+            <th scope="col"><?php echo get_string('suspends', 'local_psaelmsync'); ?></th>
+            <th scope="col"><?php echo get_string('errors', 'local_psaelmsync'); ?></th>
         </tr>
     </thead>
     <tbody>
@@ -78,10 +81,10 @@ $courses = $DB->get_records_sql("
             ?>
             <tr>
                 <td>
-                    <a href="/course/view.php?id=<?php echo $course->id; ?>" target="_blank">
-                        <?php echo format_string($course->fullname); ?>
+                    <a href="/course/view.php?id=<?php echo $course->id; ?>" target="_blank" >
+                        <?php echo format_string($course->fullname); ?><span class="sr-only"> (opens in new window)</span>
                     </a>
-                    <small>(<a href="/user/index.php?id=<?php echo $course->id; ?>" target="_blank">
+                    <small>(<a href="/user/index.php?id=<?php echo $course->id; ?>" target="_blank"  aria-label="Participants for <?php echo format_string($course->fullname); ?> (opens in new window)">
                         Participants
                     </a>)</small>
                 </td>
@@ -96,6 +99,19 @@ $courses = $DB->get_records_sql("
     </tbody>
 </table>
 
+<style>
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+</style>
 <?php
 echo $OUTPUT->footer();
 ?>

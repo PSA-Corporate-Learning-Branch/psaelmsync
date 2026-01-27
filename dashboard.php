@@ -25,30 +25,33 @@ echo $OUTPUT->header();
 ?>
 
 <!-- Tabbed Navigation -->
-<ul class="nav nav-tabs mb-3">
-    <li class="nav-item">
-        <a class="nav-link" href="/admin/settings.php?section=local_psaelmsync">Settings</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link active" href="/local/psaelmsync/dashboard.php">Learner Dashboard</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/dashboard-courses.php">Course Dashboard</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/dashboard-intake.php">Intake Run History</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/manual-intake.php">Manual Intake</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="/local/psaelmsync/manual-complete.php">Manual Complete</a>
-    </li>
-</ul>
+<nav aria-label="PSA ELM Sync sections">
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link" href="/admin/settings.php?section=local_psaelmsync">Settings</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link active" href="/local/psaelmsync/dashboard.php" aria-current="page">Learner Dashboard</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/dashboard-courses.php">Course Dashboard</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/dashboard-intake.php">Intake Run History</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/manual-intake.php">Manual Intake</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/local/psaelmsync/manual-complete.php">Manual Complete</a>
+        </li>
+    </ul>
+</nav>
 <!-- Search Form -->
-<form method="get" action="dashboard.php" class="mt-3">
+<form method="get" action="dashboard.php" class="mt-3" role="search">
+    <label for="search-logs" class="sr-only"><?= get_string('search', 'local_psaelmsync') ?></label>
     <div class="input-group">
-        <input type="text" name="search" value="<?= s(optional_param('search', '', PARAM_RAW)) ?>" class="form-control" placeholder="<?= get_string('search', 'local_psaelmsync') ?>">
+        <input type="text" id="search-logs" name="search" value="<?= s(optional_param('search', '', PARAM_RAW)) ?>" class="form-control" placeholder="<?= get_string('search', 'local_psaelmsync') ?>">
         <div class="input-group-append">
             <button class="btn btn-primary" type="submit"><?= get_string('search', 'local_psaelmsync') ?></button>
         </div>
@@ -61,12 +64,23 @@ if(!empty($search)):
 <div><a href="/local/psaelmsync/dashboard.php" class="btn btn-link">Clear search</a></div>
 <?php endif ?>
 <style>
-    th.c2, 
+    th.c2,
     th.c3 {
         min-width: 100px;
     }
     th.c7 {
         max-width: 30px;
+    }
+    .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
     }
 </style>
 <?php
