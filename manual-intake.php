@@ -41,6 +41,10 @@ $filter_guid = optional_param('guid', '', PARAM_TEXT);
 $filter_course = optional_param('course', '', PARAM_TEXT);
 $filter_state = optional_param('state', '', PARAM_ALPHA);
 $filter_status = optional_param('status', '', PARAM_ALPHA);
+$filter_firstname = optional_param('firstname', '', PARAM_TEXT);
+$filter_lastname = optional_param('lastname', '', PARAM_TEXT);
+$filter_oprid = optional_param('oprid', '', PARAM_TEXT);
+$filter_personid = optional_param('personid', '', PARAM_TEXT);
 $apiurlfiltered = '';
 
 /**
@@ -316,8 +320,153 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
     }
 }
 
+// Handle bulk processing
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_process'])) {
+    require_sesskey();
+
+    $selected_records = optional_param_array('selected_records', [], PARAM_RAW);
+    $success_count = 0;
+    $error_count = 0;
+    $errors = [];
+
+    foreach ($selected_records as $encoded_record) {
+        $record_data = json_decode(base64_decode($encoded_record), true);
+        if (!$record_data) {
+            $error_count++;
+            continue;
+        }
+
+        $record_date_created = $record_data['date_created'];
+        $course_state = $record_data['course_state'];
+        $elm_course_id = $record_data['elm_course_id'];
+        $elm_enrolment_id = $record_data['elm_enrolment_id'];
+        $user_guid = $record_data['guid'];
+        $class_code = $record_data['class_code'];
+        $user_email = $record_data['email'];
+        $first_name = $record_data['first_name'];
+        $last_name = $record_data['last_name'];
+
+        $hash_content = $record_date_created . $elm_course_id . $class_code . $course_state . $user_guid . $user_email;
+        $hash = hash('sha256', $hash_content);
+
+        $hashcheck = $DB->get_record('local_psaelmsync_logs', ['sha256hash' => $hash], '*', IGNORE_MULTIPLE);
+
+        if ($hashcheck) {
+            continue; // Skip already processed
+        }
+
+        $course = $DB->get_record('course', ['idnumber' => $elm_course_id]);
+        if (!$course) {
+            $error_count++;
+            $errors[] = "Course {$elm_course_id} not found";
+            continue;
+        }
+
+        $user = $DB->get_record('user', ['idnumber' => $user_guid]);
+        if (!$user) {
+            $user = create_new_user_local($user_email, $first_name, $last_name, $user_guid);
+            if (!$user) {
+                $error_count++;
+                $errors[] = "Failed to create user {$user_email}";
+                continue;
+            }
+        }
+
+        // Check for email mismatch
+        if (strtolower($user->email) !== strtolower($user_email)) {
+            $error_count++;
+            $errors[] = "Email mismatch for {$user_email}";
+            continue;
+        }
+
+        $manual_enrol = enrol_get_plugin('manual');
+        $enrol_instances = enrol_get_instances($course->id, true);
+        $manual_instance = null;
+
+        foreach ($enrol_instances as $instance) {
+            if ($instance->enrol === 'manual') {
+                $manual_instance = $instance;
+                break;
+            }
+        }
+
+        if (!$manual_instance || empty($manual_instance->roleid)) {
+            $error_count++;
+            $errors[] = "No manual enrolment for course {$course->shortname}";
+            continue;
+        }
+
+        if ($course_state === 'Enrol') {
+            $manual_enrol->enrol_user($manual_instance, $user->id, $manual_instance->roleid, 0, 0, ENROL_USER_ACTIVE);
+
+            $log = new stdClass();
+            $log->record_id = time();
+            $log->sha256hash = $hash;
+            $log->record_date_created = $record_date_created;
+            $log->course_id = $course->id;
+            $log->elm_course_id = $elm_course_id;
+            $log->class_code = $class_code;
+            $log->course_name = $course->fullname;
+            $log->user_id = $user->id;
+            $log->user_firstname = $user->firstname;
+            $log->user_lastname = $user->lastname;
+            $log->user_guid = $user->idnumber;
+            $log->user_email = $user->email;
+            $log->elm_enrolment_id = $elm_enrolment_id;
+            $log->action = 'Manual Enrol (Bulk)';
+            $log->status = 'Success';
+            $log->timestamp = time();
+
+            $DB->insert_record('local_psaelmsync_logs', $log);
+            send_welcome_email($user, $course);
+            $success_count++;
+
+        } elseif ($course_state === 'Suspend') {
+            $manual_enrol->update_user_enrol($manual_instance, $user->id, ENROL_USER_SUSPENDED);
+
+            $log = new stdClass();
+            $log->record_id = time();
+            $log->sha256hash = $hash;
+            $log->record_date_created = $record_date_created;
+            $log->course_id = $course->id;
+            $log->elm_course_id = $elm_course_id;
+            $log->class_code = $class_code;
+            $log->course_name = $course->fullname;
+            $log->user_id = $user->id;
+            $log->user_firstname = $user->firstname;
+            $log->user_lastname = $user->lastname;
+            $log->user_guid = $user->idnumber;
+            $log->user_email = $user->email;
+            $log->elm_enrolment_id = $elm_enrolment_id;
+            $log->action = 'Manual Suspend (Bulk)';
+            $log->status = 'Success';
+            $log->timestamp = time();
+
+            $DB->insert_record('local_psaelmsync_logs', $log);
+            $success_count++;
+        }
+    }
+
+    if ($success_count > 0) {
+        $feedback = "Bulk processing complete: {$success_count} successful";
+        if ($error_count > 0) {
+            $feedback .= ", {$error_count} errors";
+        }
+        $feedback_type = $error_count > 0 ? 'warning' : 'success';
+    } else {
+        $feedback = "Bulk processing failed: {$error_count} errors";
+        $feedback_type = 'danger';
+    }
+    if (!empty($errors)) {
+        $feedback .= "<br><small>" . implode('; ', array_slice($errors, 0, 5)) . (count($errors) > 5 ? '...' : '') . "</small>";
+    }
+}
+
 // Build API query if filters are provided
-if (!empty($filter_email) || !empty($filter_guid) || !empty($filter_from) || !empty($filter_course)) {
+$has_filters = !empty($filter_email) || !empty($filter_guid) || !empty($filter_from) || !empty($filter_course)
+    || !empty($filter_firstname) || !empty($filter_lastname) || !empty($filter_oprid) || !empty($filter_personid);
+
+if ($has_filters) {
     $filters = [];
 
     if (!empty($filter_email)) {
@@ -325,6 +474,18 @@ if (!empty($filter_email) || !empty($filter_guid) || !empty($filter_from) || !em
     }
     if (!empty($filter_guid)) {
         $filters[] = "GUID+eq+%27" . urlencode($filter_guid) . "%27";
+    }
+    if (!empty($filter_firstname)) {
+        $filters[] = "FIRST_NAME+eq+%27" . urlencode($filter_firstname) . "%27";
+    }
+    if (!empty($filter_lastname)) {
+        $filters[] = "LAST_NAME+eq+%27" . urlencode($filter_lastname) . "%27";
+    }
+    if (!empty($filter_oprid)) {
+        $filters[] = "OPRID+eq+%27" . urlencode($filter_oprid) . "%27";
+    }
+    if (!empty($filter_personid)) {
+        $filters[] = "PERSON_ID+eq+" . urlencode($filter_personid);
     }
     if (!empty($filter_course)) {
         // Support both course ID and shortname search
@@ -580,6 +741,28 @@ echo $OUTPUT->header();
 .record-row.expanded .expand-icon {
     transform: rotate(90deg);
 }
+.bulk-action-bar {
+    background: #e9ecef;
+    padding: 0.75rem 1rem;
+    border-radius: 0.25rem;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.checkbox-cell {
+    vertical-align: middle;
+}
+.record-checkbox {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+#select-all-checkbox {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
 </style>
 
 <!-- Tabbed Navigation -->
@@ -633,6 +816,20 @@ echo $OUTPUT->header();
             </div>
             <div class="col-md-2">
                 <div class="form-group">
+                    <label for="firstname">First Name</label>
+                    <input type="text" id="firstname" name="firstname" class="form-control form-control-sm"
+                           value="<?php echo s($filter_firstname); ?>" placeholder="Allan">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-group">
+                    <label for="lastname">Last Name</label>
+                    <input type="text" id="lastname" name="lastname" class="form-control form-control-sm"
+                           value="<?php echo s($filter_lastname); ?>" placeholder="Haggett">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-group">
                     <label for="email">Email</label>
                     <input type="email" id="email" name="email" class="form-control form-control-sm"
                            value="<?php echo s($filter_email); ?>" placeholder="user@example.com">
@@ -643,6 +840,22 @@ echo $OUTPUT->header();
                     <label for="guid">GUID</label>
                     <input type="text" id="guid" name="guid" class="form-control form-control-sm"
                            value="<?php echo s($filter_guid); ?>" placeholder="5F421FC1A510...">
+                </div>
+            </div>
+        </div>
+        <div class="row mt-2">
+            <div class="col-md-2">
+                <div class="form-group">
+                    <label for="oprid">OPRID</label>
+                    <input type="text" id="oprid" name="oprid" class="form-control form-control-sm"
+                           value="<?php echo s($filter_oprid); ?>" placeholder="AHAGGETT">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-group">
+                    <label for="personid">PERSON_ID</label>
+                    <input type="text" id="personid" name="personid" class="form-control form-control-sm"
+                           value="<?php echo s($filter_personid); ?>" placeholder="115000">
                 </div>
             </div>
             <div class="col-md-2">
@@ -662,8 +875,6 @@ echo $OUTPUT->header();
                     </select>
                 </div>
             </div>
-        </div>
-        <div class="row mt-2">
             <div class="col-md-2">
                 <div class="form-group">
                     <label for="status">Record Status</label>
@@ -677,10 +888,10 @@ echo $OUTPUT->header();
                     </select>
                 </div>
             </div>
-            <div class="col-md-10">
+            <div class="col-md-2">
                 <div class="filter-actions">
                     <button type="submit" class="btn btn-primary btn-sm">Search CData</button>
-                    <a href="<?php echo $PAGE->url; ?>" class="btn btn-secondary btn-sm">Clear Filters</a>
+                    <a href="<?php echo $PAGE->url; ?>" class="btn btn-secondary btn-sm">Clear</a>
                 </div>
             </div>
         </div>
@@ -700,8 +911,12 @@ echo $OUTPUT->header();
     <?php
     // Calculate summary counts
     $status_counts = ['ready' => 0, 'new_user' => 0, 'mismatch' => 0, 'blocked' => 0, 'done' => 0];
+    $processable_count = 0;
     foreach ($processed_records as $pr) {
         $status_counts[$pr['status_info']['status']]++;
+        if ($pr['status_info']['can_process']) {
+            $processable_count++;
+        }
     }
     ?>
 
@@ -724,9 +939,29 @@ echo $OUTPUT->header();
         <?php endif; ?>
     </div>
 
+    <?php if ($processable_count > 0): ?>
+    <form method="post" action="<?php echo $PAGE->url; ?>" id="bulk-process-form">
+        <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+
+        <!-- Bulk Action Bar (Top) -->
+        <div class="bulk-action-bar mb-2">
+            <button type="submit" name="bulk_process" class="btn btn-success btn-sm">
+                Process Selected (<span class="selected-count"><?php echo $processable_count; ?></span>)
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="select-all-btn">Select All</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="select-none-btn">Select None</button>
+            <span class="text-muted ml-2"><span class="selected-count"><?php echo $processable_count; ?></span> of <?php echo $processable_count; ?> processable selected</span>
+        </div>
+    <?php endif; ?>
+
     <table class="table table-bordered record-table">
         <thead>
             <tr>
+                <?php if ($processable_count > 0): ?>
+                <th style="width: 40px;" class="text-center">
+                    <input type="checkbox" id="select-all-checkbox" checked title="Select/Deselect All">
+                </th>
+                <?php endif; ?>
                 <th style="width: 30px;"></th>
                 <th>Status</th>
                 <th>User</th>
@@ -743,8 +978,29 @@ echo $OUTPUT->header();
             $course = $pr['course'];
             $status_info = $pr['status_info'];
             $is_enrolled = $pr['is_enrolled'];
+
+            // Encode record data for bulk processing
+            $record_data = base64_encode(json_encode([
+                'date_created' => $record['date_created'],
+                'course_state' => $record['COURSE_STATE'],
+                'elm_course_id' => $record['COURSE_IDENTIFIER'],
+                'elm_enrolment_id' => $record['ENROLMENT_ID'],
+                'guid' => $record['GUID'],
+                'class_code' => $record['COURSE_SHORTNAME'],
+                'email' => $record['EMAIL'],
+                'first_name' => $record['FIRST_NAME'],
+                'last_name' => $record['LAST_NAME']
+            ]));
         ?>
             <tr class="record-row" data-index="<?php echo $index; ?>">
+                <?php if ($processable_count > 0): ?>
+                <td class="text-center checkbox-cell" onclick="event.stopPropagation();">
+                    <?php if ($status_info['can_process']): ?>
+                    <input type="checkbox" name="selected_records[]" value="<?php echo $record_data; ?>"
+                           class="record-checkbox" checked>
+                    <?php endif; ?>
+                </td>
+                <?php endif; ?>
                 <td class="text-center"><span class="expand-icon">▶</span></td>
                 <td>
                     <span class="badge badge-<?php echo $status_info['class']; ?> status-badge">
@@ -805,7 +1061,7 @@ echo $OUTPUT->header();
                 </td>
             </tr>
             <tr class="record-details" data-index="<?php echo $index; ?>">
-                <td colspan="7">
+                <td colspan="<?php echo $processable_count > 0 ? 8 : 7; ?>">
                     <div class="diff-container">
                         <div class="diff-panel">
                             <h6>CData Record</h6>
@@ -977,6 +1233,18 @@ echo $OUTPUT->header();
         </tbody>
     </table>
 
+    <?php if ($processable_count > 0): ?>
+        <!-- Bulk Action Bar (Bottom) -->
+        <div class="bulk-action-bar mt-2">
+            <button type="submit" name="bulk_process" class="btn btn-success btn-sm">
+                Process Selected (<span class="selected-count"><?php echo $processable_count; ?></span>)
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="select-all-btn-bottom">Select All</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="select-none-btn-bottom">Select None</button>
+        </div>
+    </form>
+    <?php endif; ?>
+
 <?php elseif (!empty($apiurlfiltered)): ?>
     <div class="alert alert-info">No records found matching your filters.</div>
 <?php else: ?>
@@ -997,11 +1265,64 @@ echo $OUTPUT->header();
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Bulk selection functionality
+    var checkboxes = document.querySelectorAll('.record-checkbox');
+    var selectAllCheckbox = document.getElementById('select-all-checkbox');
+    var selectedCountSpans = document.querySelectorAll('.selected-count');
+
+    function updateSelectedCount() {
+        var count = document.querySelectorAll('.record-checkbox:checked').length;
+        selectedCountSpans.forEach(function(span) {
+            span.textContent = count;
+        });
+        if (selectAllCheckbox) {
+            selectAllCheckbox.checked = count === checkboxes.length;
+            selectAllCheckbox.indeterminate = count > 0 && count < checkboxes.length;
+        }
+    }
+
+    function selectAll() {
+        checkboxes.forEach(function(cb) { cb.checked = true; });
+        updateSelectedCount();
+    }
+
+    function selectNone() {
+        checkboxes.forEach(function(cb) { cb.checked = false; });
+        updateSelectedCount();
+    }
+
+    // Select all checkbox in header
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function() {
+            if (this.checked) {
+                selectAll();
+            } else {
+                selectNone();
+            }
+        });
+    }
+
+    // Select All / Select None buttons (top and bottom)
+    ['select-all-btn', 'select-all-btn-bottom'].forEach(function(id) {
+        var btn = document.getElementById(id);
+        if (btn) btn.addEventListener('click', selectAll);
+    });
+
+    ['select-none-btn', 'select-none-btn-bottom'].forEach(function(id) {
+        var btn = document.getElementById(id);
+        if (btn) btn.addEventListener('click', selectNone);
+    });
+
+    // Individual checkbox changes
+    checkboxes.forEach(function(cb) {
+        cb.addEventListener('change', updateSelectedCount);
+    });
+
     // Toggle row expansion
     document.querySelectorAll('.record-row').forEach(function(row) {
         row.addEventListener('click', function(e) {
-            // Don't toggle if clicking on a form button or link
-            if (e.target.closest('form') || e.target.closest('a')) {
+            // Don't toggle if clicking on the individual process form, link, or checkbox cell
+            if (e.target.closest('.process-form') || e.target.closest('a') || e.target.closest('.checkbox-cell') || e.target.closest('button')) {
                 return;
             }
 
@@ -1010,13 +1331,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
             this.classList.toggle('expanded');
             detailsRow.classList.toggle('show');
-        });
-    });
-
-    // Prevent form submission from triggering row expansion
-    document.querySelectorAll('.process-form').forEach(function(form) {
-        form.addEventListener('click', function(e) {
-            e.stopPropagation();
         });
     });
 });

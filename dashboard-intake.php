@@ -61,7 +61,7 @@ $chartData = [
 ];
 
 foreach ($lastruns as $run) {
-    $start = (int) $run->starttime / 1000;
+    $start = (int) ($run->starttime / 1000);
     $chartData['labels'][] = date('Y-m-d H:i:s', $start);
     $chartData['enrolments'][] = $run->enrolcount;
     $chartData['suspends'][] = $run->suspendcount;
@@ -139,59 +139,99 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 </script>
+<?php
+$sql = "SELECT
+            SUM(enrolcount) AS total_enrols,
+            SUM(suspendcount) AS total_suspends,
+            SUM(errorcount) AS total_errors
+        FROM {local_psaelmsync_runs}";
+$totals = $DB->get_record_sql($sql);
+?>
+
+<style>
+.stat-card {
+    background: #f8f9fa;
+    border-radius: 0.5rem;
+    padding: 1.25rem;
+    text-align: center;
+    border-left: 4px solid;
+}
+.stat-card.enrols { border-left-color: rgba(75, 192, 192, 1); }
+.stat-card.suspends { border-left-color: rgba(255, 159, 64, 1); }
+.stat-card.errors { border-left-color: rgba(255, 99, 132, 1); }
+.stat-card .stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    line-height: 1.2;
+}
+.stat-card .stat-label {
+    font-size: 0.85rem;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.stat-card.enrols .stat-value { color: rgba(75, 192, 192, 1); }
+.stat-card.suspends .stat-value { color: rgba(255, 159, 64, 1); }
+.stat-card.errors .stat-value { color: rgba(255, 99, 132, 1); }
+.sync-info-details {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+.sync-info-details summary {
+    cursor: pointer;
+    padding: 0.5rem;
+    background: #f8f9fa;
+    border-radius: 0.25rem;
+    font-weight: 500;
+}
+.sync-info-details[open] summary {
+    margin-bottom: 0.5rem;
+}
+.sync-info-details .info-content {
+    padding: 0.75rem;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    font-size: 0.9rem;
+}
+</style>
+
+<!-- Stats Cards -->
+<div class="row mb-3">
+    <div class="col-md-4">
+        <div class="stat-card enrols">
+            <div class="stat-value"><?php echo number_format($totals->total_enrols ?? 0); ?></div>
+            <div class="stat-label">Total Enrolments</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card suspends">
+            <div class="stat-value"><?php echo number_format($totals->total_suspends ?? 0); ?></div>
+            <div class="stat-label">Total Suspends</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card errors">
+            <div class="stat-value"><?php echo number_format($totals->total_errors ?? 0); ?></div>
+            <div class="stat-label">Total Errors</div>
+        </div>
+    </div>
+</div>
+<p class="text-muted text-center" style="margin-top: -0.5rem; font-size: 0.85rem;">Since Sept. 4, 2024</p>
+
+<!-- Sync Info -->
+<details class="sync-info-details">
+    <summary>Sync Info</summary>
+    <div class="info-content">
+        <p class="mb-2">The cron job for intake (from CData) happens every 5 minutes, starting on the 2nd minute of the hour,
+             (ELM posts to CData every 5 minutes on the 0) between the hours of 06:00 and 18:00;<br>
+             <pre>2,7,12,17,22,27,32,37,42,47,52,57</pre></p>
+        <!-- <p class="mb-0">At most, there will be 72 intake runs a day (6 an hour for 12 hours). This page shows the past 100 runs, with each page representing about a day and a half worth of enrolment data.</p> -->
+    </div>
+</details>
+
 <div class="row mb-2">
     <div class="col-md-12">
-
-        <p>The cron job for intake (from CData) happens every 10 minutes, on the 5, 
-            (ELM posts to CData every 10 minutes on the 0)
-            between the hours of 06:00 and 18:00; 
-            09:05, 09:15, 09:25, 09:35, etc.</p>
-        <p>At most, there will be 72 intake runs a day (6 an hour for 12 hours). 
-            This page shows the past 100 runs, with each page representing about
-            a day and a half worth of enrolment day.</p>
-        <p>Since Sept. 4, 2024: 
-        <?php
-        $sql = "SELECT 
-                    SUM(enrolcount) AS total_enrols, 
-                    SUM(suspendcount) AS total_suspends, 
-                    SUM(errorcount) AS total_errors
-                FROM {local_psaelmsync_runs}";
-
-        $totals = $DB->get_record_sql($sql);
-
-        if ($totals) {
-            echo "Total Enrols: " . $totals->total_enrols . " ";
-            echo "Total Suspends: " . $totals->total_suspends . " ";
-            echo "Total Errors: " . $totals->total_errors . " ";
-        } else {
-            echo "No data available.";
-        }
-        ?></p>
-        <p>
-        <?php
-        // Get today's start and end timestamps
-        // $start_of_day = strtotime("today 00:00:00");
-        // $end_of_day = strtotime("tomorrow 00:00:00") - 1;
-
-        // $sql = "SELECT 
-        //             SUM(enrolcount) AS total_enrols, 
-        //             SUM(suspendcount) AS total_suspends, 
-        //             SUM(errorcount) AS total_errors
-        //         FROM {local_psaelmsync_runs}
-        //         WHERE timecreated >= :start_of_day AND timecreated <= :end_of_day";
-
-        // $daytotals = $DB->get_record_sql($sql, ['start_of_day' => $start_of_day, 'end_of_day' => $end_of_day]);
-
-        // if ($daytotals) {
-        //     echo "Total Enrols Today: " . $daytotals->total_enrols . " ";
-        //     echo "Total Suspends Today: " . $daytotals->total_suspends . " ";
-        //     echo "Total Errors Today: " . $daytotals->total_errors . " ";
-        // } else {
-        //     echo "No data available for today.";
-        // }
-        ?>
-        </p>
-
         <div style="height: 320px;">
             <canvas id="runsChart"></canvas>
         </div>
@@ -210,8 +250,8 @@ document.addEventListener('DOMContentLoaded', function () {
             <tbody>
             <?php foreach($lastruns as $run): ?>
             <?php
-            $start = (int) $run->starttime / 1000;
-            $end = (int) $run->endtime / 1000;
+            $start = (int) ($run->starttime / 1000);
+            $end = (int) ($run->endtime / 1000);
             ?>
             <tr>
                 <td>
