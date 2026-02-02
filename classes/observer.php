@@ -47,10 +47,10 @@ class observer {
                         // Get enrolment_id and another field (e.g., status) from local_psaelmsync_logs table.
                         $sql = "SELECT elm_enrolment_id, class_code, sha256hash 
                                 FROM {local_psaelmsync_logs} 
-                                WHERE elm_course_id = :courseid AND user_id = :userid 
+                                WHERE course_id = :courseid AND user_id = :userid 
                                 ORDER BY timestamp DESC LIMIT 1";
                         
-                        $params = ['courseid' => $elmcourseid, 'userid' => $userid];
+                        $params = ['courseid' => $courseid, 'userid' => $userid];
                         $records = $DB->get_records_sql($sql, $params);
                         
                         $deets = reset($records); // get the first record if it exists
@@ -142,7 +142,11 @@ class observer {
                             'EMAIL' => $user->email,
                             'GUID' => $user->idnumber,
                             'FIRST_NAME' => $user->firstname, 
-                            'LAST_NAME' => $user->lastname
+                            'LAST_NAME' => $user->lastname,
+                            'OPRID' => $deets->oprid ?? '',
+                            'ACTIVITY_ID' => $deets->activity_id ?? 0,
+                            'PERSON_ID' => $deets->person_id ?? 0,
+                            'COURSE_LONG_NAME' => $coursename
                         ];
                         
                         $jsonData = json_encode($data);
