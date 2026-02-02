@@ -23,7 +23,6 @@ $PAGE->set_heading(get_string('logs', 'local_psaelmsync'));
 
 echo $OUTPUT->header();
 ?>
-
 <!-- Tabbed Navigation -->
 <nav aria-label="PSA ELM Sync sections">
     <ul class="nav nav-tabs mb-3">

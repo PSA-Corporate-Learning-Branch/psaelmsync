@@ -142,6 +142,9 @@ function process_enrolment_record($record) {
     $last_name = $record['LAST_NAME'];
     $user_email = $record['EMAIL'];
     $user_guid = $record['GUID'];
+    $user_oprid = $record['OPRID'];
+    $user_activity_id = $record['ACTIVITY_ID'];
+    $user_person_id = $record['PERSON_ID'];
     
     // We need to create a unique ID here by hashing the relevent info.
     // When we have access to them, we'll want to include $enrolment_id and 
@@ -183,7 +186,10 @@ function process_enrolment_record($record) {
                     $first_name, 
                     $last_name, 
                     $user_email, 
-                    $user_guid, 
+                    $user_guid,
+                    $user_oprid,
+                    $user_person_id,
+                    $user_activity_id,
                     'Course not found',
                     'Error');
         
@@ -231,7 +237,10 @@ function process_enrolment_record($record) {
                         $first_name, 
                         $last_name, 
                         $user_email, 
-                        $user_guid, 
+                        $user_guid,
+                        $user_oprid,
+                        $user_person_id,
+                        $user_activity_id, 
                         'User create failure',
                         'Error');
             
@@ -308,7 +317,10 @@ function process_enrolment_record($record) {
                     $first_name, 
                     $last_name, 
                     $user_email, 
-                    $user_guid, 
+                    $user_guid,
+                    $user_oprid,
+                    $user_person_id,
+                    $user_activity_id, 
                     'Email Mistatch',
                     'Error');
         
@@ -349,7 +361,10 @@ function process_enrolment_record($record) {
                     $first_name, 
                     $last_name, 
                     $user_email, 
-                    $user_guid, 
+                    $user_guid,
+                    $user_oprid,
+                    $user_person_id,
+                    $user_activity_id,
                     $action, 
                     'Success');
 
@@ -375,7 +390,10 @@ function process_enrolment_record($record) {
                     $first_name, 
                     $last_name, 
                     $user_email, 
-                    $user_guid, 
+                    $user_guid,
+                    $user_oprid,
+                    $user_person_id,
+                    $user_activity_id, 
                     $action, 
                     'Success');
     }
@@ -454,7 +472,7 @@ function send_welcome_email($user, $course) {
     email_to_user($user, core_user::get_support_user(), $subject, $plaintext_message, $html_message);
 }
 
-function log_record($record_id, $hash, $record_date_created, $course_id, $elm_course_id, $class_code, $enrolment_id, $user_id, $first_name, $last_name, $user_email, $user_guid, $action, $status) {
+function log_record($record_id, $hash, $record_date_created, $course_id, $elm_course_id, $class_code, $enrolment_id, $user_id, $first_name, $last_name, $user_email, $user_guid, $user_oprid, $user_person_id, $user_activity_id, $action, $status) {
     global $DB;
 
     // Ensure course_id is valid before lookup
@@ -476,8 +494,11 @@ function log_record($record_id, $hash, $record_date_created, $course_id, $elm_co
     $log->user_id = $user_id;
     $log->user_firstname = $first_name;
     $log->user_lastname = $last_name;
-    $log->user_guid = $user_guid; 
     $log->user_email = $user_email;
+    $log->user_guid = $user_guid; 
+    $log->oprid = $user_oprid;
+    $log->person_id = $user_person_id;
+    $log->activity_id = $user_activity_id;
     $log->elm_enrolment_id = $enrolment_id;
     $log->action = $action;
     $log->status = $status;
