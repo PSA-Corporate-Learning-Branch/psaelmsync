@@ -25,7 +25,7 @@ function local_psaelmsync_sync() {
     $time_minus_mins = date('Y-m-d H:i:s', strtotime($mins));
     $encoded_time = urlencode($time_minus_mins);
     $apiurlfiltered = $apiurl . '?%24orderby=COURSE_STATE_DATE,date_created+asc';
-    $apiurlfiltered .= '&%24filter=date_created+gt+%27' . $encoded_time .'%27';
+    $apiurlfiltered .= '&%24filter=date_created+gt+%27' . $encoded_time .'%27+and+USER_STATE+eq+%27ACTIVE%27';
 
     // Make API call.
     $options = array(
@@ -145,6 +145,7 @@ function process_enrolment_record($record) {
     $user_oprid = $record['OPRID'];
     $user_activity_id = $record['ACTIVITY_ID'];
     $user_person_id = $record['PERSON_ID'];
+    $course_long_name = $record['COURSE_LONG_NAME'];
     
     // We need to create a unique ID here by hashing the relevent info.
     // When we have access to them, we'll want to include $enrolment_id and 
@@ -192,8 +193,8 @@ function process_enrolment_record($record) {
                     $user_activity_id,
                     'Course not found',
                     'Error');
-        
-        send_failure_notification('coursefail', $first_name, $last_name, $user_email, $elm_course_id);
+        // Send the email notification
+        send_failure_notification('coursefail', $first_name, $last_name, $course_long_name, $user_email, $user_person_id, $user_oprid, $user_activity_id, $class_code, 'Course not found');
         $e = 'Error';
         return $e;
     }
@@ -245,7 +246,7 @@ function process_enrolment_record($record) {
                         'Error');
             
             // Send an email notification
-            send_failure_notification('userfail', $first_name, $last_name, $user_email, $error_message);
+            send_failure_notification('userfail', $first_name, $last_name, $course_long_name, $user_email, $user_person_id, $user_oprid, $user_activity_id, $class_code, $error_message);
 
             // Return to skip further processing of this record.
             $e = 'Error';
@@ -325,7 +326,7 @@ function process_enrolment_record($record) {
                     'Error');
         
         // Send the email notification
-        send_failure_notification('emailmismatch', $first_name, $last_name, $user_email, $message);
+        send_failure_notification('emailmismatch', $first_name, $last_name, $course_long_name, $user_email, $user_person_id, $user_oprid, $user_activity_id, $class_code, $message);
 
         $e = 'Error';
         return $e;
@@ -452,7 +453,7 @@ function send_welcome_email($user, $course) {
        <p>You have been enrolled in <strong>{$course->fullname}</strong>.</p>
        <p>Please click the following link, signing in using your IDIR credentials:</p>
        <p><a href="https://learning.gww.gov.bc.ca/course/view.php?id={$course->id}" style="font-size: 20px;">Access this course on PSA Moodle</a></p>
-       <p>If you have any issues with the course materials, please <a href="http://www.gov.bc.ca/myhr/contact">submit an AskMyHR request</a> and select one of the subcategories under "Learning Centre".</p>
+       <p>If you have any issues with the course materials, please <a href="http://www.gov.bc.ca/myhr/contact">submit an AskMyHR request</a> and select one of the subcategories under "Corporate Learning".</p>
        <p>Regards,<br>PSA Moodle Team</p>
    EMAIL;
 
@@ -461,7 +462,7 @@ function send_welcome_email($user, $course) {
         You have been enrolled in $course->fullname.\n
         Please click the following link, signing in using your IDIR credentials:\n
         https://learning.gww.gov.bc.ca/course/view.php?id=$course->id\n
-        If you have any issues with the course materials, please submit an AskMyHR request at http://www.gov.bc.ca/myhr/contact and select one of the subcategories under "Learning Centre".\n\n
+        If you have any issues with the course materials, please submit an AskMyHR request at http://www.gov.bc.ca/myhr/contact and select one of the subcategories under "Corporate Learning".\n\n
         Regards,
         PSA Moodle Team
     EMAIL;
@@ -508,7 +509,7 @@ function log_record($record_id, $hash, $record_date_created, $course_id, $elm_co
 }
 
 // Function to send failure notification email
-function send_failure_notification($type, $first_name, $last_name, $email, $error_message) {
+function send_failure_notification($type, $first_name, $last_name, $course_name, $email, $person_id, $oprid, $activity_id, $class_code, $error_message) {
     global $CFG;
 
     // Get the list of email addresses from admin settings
@@ -522,7 +523,12 @@ function send_failure_notification($type, $first_name, $last_name, $email, $erro
             $message = "A failure occurred during user creation.\n\n";
             $message .= "Details:\n";
             $message .= "Name: {$first_name} {$last_name}\n";
+            $message .= "Course: {$course_name}\n";
+            $message .= "Class Code: {$class_code}\n";
             $message .= "Email: {$email}\n";
+            $message .= "Learner ID: {$person_id}\n";
+            $message .= "IDIR: {$oprid}\n";
+            $message .= "Activity ID: {$activity_id}\n";
             $message .= "Error: {$error_message}\n\n";
             $message .= "Please investigate the issue.";
 
@@ -533,7 +539,12 @@ function send_failure_notification($type, $first_name, $last_name, $email, $erro
             $message .= "Details:\n";
             $message .= "Course ID: {$error_message}\n";
             $message .= "Name: {$first_name} {$last_name}\n";
-            $message .= "Email: {$email}\n\n";
+            $message .= "Course: {$course_name}\n";
+            $message .= "Class Code: {$class_code}\n";
+            $message .= "Email: {$email}\n";
+            $message .= "Learner ID: {$person_id}\n";
+            $message .= "IDIR: {$oprid}\n";
+            $message .= "Activity ID: {$activity_id}\n";
             $message .= "Please investigate the issue.";
 
         } elseif($type == 'emailmismatch') {
@@ -542,7 +553,12 @@ function send_failure_notification($type, $first_name, $last_name, $email, $erro
             $message = "A discrepancy was found when enrolling a user.\n\n";
             $message .= "{$error_message}\n";
             $message .= "Name: {$first_name} {$last_name}\n";
-            $message .= "Email: {$email}\n\n";
+            $message .= "Course: {$course_name}\n";
+            $message .= "Class Code: {$class_code}\n";
+            $message .= "Email: {$email}\n";
+            $message .= "Learner ID: {$person_id}\n";
+            $message .= "IDIR: {$oprid}\n";
+            $message .= "Activity ID: {$activity_id}\n";
             $message .= "Please investigate the issue.";
 
         }

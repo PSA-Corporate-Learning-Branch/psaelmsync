@@ -66,10 +66,10 @@ class observer {
 
                                 $subject = "User Enrolment Data Lookup Failure";
                                 
-                                $message = $user->firstname . ' ' . $user->lastname . ': https://learning.gww.gov.bc.ca/user/view.php?id=' . $userid . '\n';
-                                $message .= $coursename . ': https://learning.gww.gov.bc.ca/course/view.php?id=' . $courseid . '\n';
-                                $message .= 'ELM Course ID: ' . $elmcourseid . '\n';
-                                $message .= 'Could not find an associated record in local_psaelmsync_logs for this completion.';
+                                $message = $user->firstname . " " . $user->lastname . ": https://learning.gww.gov.bc.ca/user/view.php?id=" . $userid . "\n";
+                                $message .= $coursename . ": https://learning.gww.gov.bc.ca/course/view.php?id=" . $courseid . "\n";
+                                $message .= "ELM Course ID: " . $elmcourseid . "\n";
+                                $message .= "Could not find an associated record in local_psaelmsync_logs for this completion.";
                                 
                                 // Create a dummy user object for sending the email
                                 $dummyuser = new \stdClass();
