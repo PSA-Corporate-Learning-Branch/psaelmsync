@@ -1101,7 +1101,11 @@ echo $OUTPUT->header();
                             </div>
                             <div class="diff-row">
                                 <span class="label">User State:</span>
-                                <span class="value"><?php echo htmlspecialchars($record['USER_STATE'] ?? '—'); ?></span>
+                                <?php if($record['USER_STATE'] === 'INACTIVE'): ?>
+                                <span class="badge badge-danger"><?php echo htmlspecialchars($record['USER_STATE'] ?? '—'); ?></span>
+                                <?php else: ?>
+                                <span class="badge badge-success"><?php echo htmlspecialchars($record['USER_STATE'] ?? '—'); ?></span>
+                                <?php endif; ?>
                             </div>
                             <hr>
                             <div class="diff-row">
