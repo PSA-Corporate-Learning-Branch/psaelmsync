@@ -191,6 +191,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
     $user_email = required_param('email', PARAM_TEXT);
     $first_name = required_param('first_name', PARAM_TEXT);
     $last_name = required_param('last_name', PARAM_TEXT);
+    $oprid = optional_param('oprid', '', PARAM_TEXT);
+    $person_id = optional_param('person_id', '', PARAM_TEXT);
+    $activity_id = optional_param('activity_id', '', PARAM_TEXT);
 
     $hash_content = $record_date_created . $elm_course_id . $class_code . $course_state . $user_guid . $user_email;
     $hash = hash('sha256', $hash_content);
@@ -267,6 +270,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
                                 $log->user_guid = $user->idnumber;
                                 $log->user_email = $user->email;
                                 $log->elm_enrolment_id = $elm_enrolment_id;
+                                $log->oprid = $oprid;
+                                $log->person_id = $person_id;
+                                $log->activity_id = $activity_id;
                                 $log->action = 'Manual Enrol';
                                 $log->status = 'Success';
                                 $log->timestamp = time();
@@ -298,6 +304,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
                             $log->user_guid = $user->idnumber;
                             $log->user_email = $user->email;
                             $log->elm_enrolment_id = $elm_enrolment_id;
+                            $log->oprid = $oprid;
+                            $log->person_id = $person_id;
+                            $log->activity_id = $activity_id;
                             $log->action = 'Manual Suspend';
                             $log->status = 'Success';
                             $log->timestamp = time();
@@ -345,6 +354,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_process'])) {
         $user_email = $record_data['email'];
         $first_name = $record_data['first_name'];
         $last_name = $record_data['last_name'];
+        $oprid = $record_data['oprid'] ?? '';
+        $person_id = $record_data['person_id'] ?? '';
+        $activity_id = $record_data['activity_id'] ?? '';
 
         $hash_content = $record_date_created . $elm_course_id . $class_code . $course_state . $user_guid . $user_email;
         $hash = hash('sha256', $hash_content);
@@ -413,6 +425,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_process'])) {
             $log->user_guid = $user->idnumber;
             $log->user_email = $user->email;
             $log->elm_enrolment_id = $elm_enrolment_id;
+            $log->oprid = $oprid;
+            $log->person_id = $person_id;
+            $log->activity_id = $activity_id;
             $log->action = 'Manual Enrol (Bulk)';
             $log->status = 'Success';
             $log->timestamp = time();
@@ -438,6 +453,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_process'])) {
             $log->user_guid = $user->idnumber;
             $log->user_email = $user->email;
             $log->elm_enrolment_id = $elm_enrolment_id;
+            $log->oprid = $oprid;
+            $log->person_id = $person_id;
+            $log->activity_id = $activity_id;
             $log->action = 'Manual Suspend (Bulk)';
             $log->status = 'Success';
             $log->timestamp = time();
@@ -1007,7 +1025,10 @@ echo $OUTPUT->header();
                 'class_code' => $record['COURSE_SHORTNAME'],
                 'email' => $record['EMAIL'],
                 'first_name' => $record['FIRST_NAME'],
-                'last_name' => $record['LAST_NAME']
+                'last_name' => $record['LAST_NAME'],
+                'oprid' => $record['OPRID'] ?? '',
+                'person_id' => $record['PERSON_ID'] ?? '',
+                'activity_id' => $record['ACTIVITY_ID'] ?? ''
             ]));
         ?>
             <tr class="record-row" data-index="<?php echo $index; ?>" tabindex="0" role="row" aria-expanded="false" aria-controls="details-<?php echo $index; ?>" aria-label="<?php echo htmlspecialchars($record['FIRST_NAME'] . ' ' . $record['LAST_NAME'] . ', ' . $status_info['label']); ?>. Press Enter to expand.">
@@ -1060,6 +1081,9 @@ echo $OUTPUT->header();
                             <input type="hidden" name="email" value="<?php echo htmlspecialchars($record['EMAIL']); ?>">
                             <input type="hidden" name="first_name" value="<?php echo htmlspecialchars($record['FIRST_NAME']); ?>">
                             <input type="hidden" name="last_name" value="<?php echo htmlspecialchars($record['LAST_NAME']); ?>">
+                            <input type="hidden" name="oprid" value="<?php echo htmlspecialchars($record['OPRID'] ?? ''); ?>">
+                            <input type="hidden" name="person_id" value="<?php echo htmlspecialchars($record['PERSON_ID'] ?? ''); ?>">
+                            <input type="hidden" name="activity_id" value="<?php echo htmlspecialchars($record['ACTIVITY_ID'] ?? ''); ?>">
                             <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
                             <!-- Preserve filter state -->
                             <input type="hidden" name="from" value="<?php echo s($filter_from); ?>">

@@ -243,7 +243,7 @@ function get_enrolment_record($elm_course_id, $userid) {
     global $DB;
 
     $record = $DB->get_record_sql(
-        "SELECT elm_enrolment_id, class_code, sha256hash
+        "SELECT elm_enrolment_id, class_code, sha256hash, oprid, person_id, activity_id
          FROM {local_psaelmsync_logs}
          WHERE elm_course_id = :courseid
          AND user_id = :userid
@@ -281,7 +281,10 @@ function post_completion_to_cdata($user, $course, $enrolment_record) {
         'EMAIL' => $user->email,
         'GUID' => $user->idnumber,
         'FIRST_NAME' => $user->firstname,
-        'LAST_NAME' => $user->lastname
+        'LAST_NAME' => $user->lastname,
+        'OPRID' => $enrolment_record->oprid ?? '',
+        'ACTIVITY_ID' => $enrolment_record->activity_id ?? 0,
+        'PERSON_ID' => $enrolment_record->person_id ?? 0
     ];
 
     $jsonData = json_encode($data);
@@ -317,6 +320,9 @@ function post_completion_to_cdata($user, $course, $enrolment_record) {
         'user_guid' => $user->idnumber,
         'user_email' => $user->email,
         'elm_enrolment_id' => $elm_enrolment_id,
+        'oprid' => $enrolment_record->oprid ?? '',
+        'person_id' => $enrolment_record->person_id ?? '',
+        'activity_id' => $enrolment_record->activity_id ?? '',
         'action' => 'Manual Complete',
         'status' => 'Success',
         'timestamp' => time(),

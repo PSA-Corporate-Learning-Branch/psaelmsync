@@ -45,9 +45,9 @@ class observer {
                         $user = $DB->get_record('user', ['id' => $userid], 'id, idnumber, firstname, lastname, email, maildisplay, username');
                         
                         // Get enrolment_id and another field (e.g., status) from local_psaelmsync_logs table.
-                        $sql = "SELECT elm_enrolment_id, class_code, sha256hash 
-                                FROM {local_psaelmsync_logs} 
-                                WHERE course_id = :courseid AND user_id = :userid 
+                        $sql = "SELECT elm_enrolment_id, class_code, sha256hash, oprid, person_id, activity_id
+                                FROM {local_psaelmsync_logs}
+                                WHERE course_id = :courseid AND user_id = :userid
                                 ORDER BY timestamp DESC LIMIT 1";
                         
                         $params = ['courseid' => $courseid, 'userid' => $userid];
@@ -181,6 +181,9 @@ class observer {
                             'user_guid' => $user->idnumber,
                             'user_email' => $user->email,
                             'elm_enrolment_id' => $elm_enrolment_id,
+                            'oprid' => $deets->oprid ?? '',
+                            'person_id' => $deets->person_id ?? '',
+                            'activity_id' => $deets->activity_id ?? '',
                             'action' => 'Complete',
                             'status' => 'Success',
                             'timestamp' => time(),
