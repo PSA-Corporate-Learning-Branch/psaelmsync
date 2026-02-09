@@ -10,14 +10,14 @@ class log_table extends \table_sql {
 
         parent::__construct($uniqueid);
 
-        $columns = array('status', 'action', 'timestamp', 'course_name', 'elm_course_id', 'elm_enrolment_id', 'user_lastname', 'user_email', 'user_guid', 'record_date_created');
+        $columns = array('status', 'action', 'timestamp', 'course_name', 'person_id', 'elm_enrolment_id', 'user_lastname', 'user_email', 'user_guid', 'record_date_created');
         $this->define_columns($columns);
         $headers = array(
             get_string('status', 'local_psaelmsync'),
             get_string('action', 'local_psaelmsync'),
             get_string('timestamp', 'local_psaelmsync'),
             get_string('course_name', 'local_psaelmsync'),
-            get_string('elm_course_id', 'local_psaelmsync'),
+            get_string('person_id', 'local_psaelmsync'),
             get_string('elm_enrolment_id', 'local_psaelmsync'),
             get_string('user_lastname', 'local_psaelmsync'),
             get_string('user_email', 'local_psaelmsync'),

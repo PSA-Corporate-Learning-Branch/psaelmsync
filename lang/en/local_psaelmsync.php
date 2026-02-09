@@ -62,3 +62,4 @@ $string['completion_opt_in'] = 'Course Completion';
 $string['elm_course_id'] = 'ELM Course ID';
 $string['email_cdata_lookup'] = 'Email';
 $string['guid_cdata_lookup'] = 'GUID';
+$string['person_id'] = 'Person ID';
