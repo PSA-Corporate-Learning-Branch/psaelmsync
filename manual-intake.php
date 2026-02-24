@@ -51,7 +51,7 @@ $apiurlfiltered = '';
  * Determine the status category for a record based on Moodle state comparison.
  */
 function determine_record_status($record, $user, $course, $hash_exists, $is_enrolled) {
-    // Already processed
+    // Already processed successfully
     if ($hash_exists) {
         return [
             'status' => 'done',
@@ -200,7 +200,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
 
     $hashcheck = $DB->get_record('local_psaelmsync_logs', ['sha256hash' => $hash], '*', IGNORE_MULTIPLE);
 
-    if ($hashcheck) {
+    if ($hashcheck && $hashcheck->status === 'Success') {
         $feedback = 'This record has already been processed.';
         $feedback_type = 'warning';
     } else {
@@ -363,8 +363,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_process'])) {
 
         $hashcheck = $DB->get_record('local_psaelmsync_logs', ['sha256hash' => $hash], '*', IGNORE_MULTIPLE);
 
-        if ($hashcheck) {
-            continue; // Skip already processed
+        if ($hashcheck && $hashcheck->status === 'Success') {
+            continue; // Skip already processed successfully
         }
 
         $course = $DB->get_record('course', ['idnumber' => $elm_course_id]);
@@ -584,7 +584,8 @@ if (!empty($data['value'])) {
 
         $hash_content = $record['date_created'] . $record['COURSE_IDENTIFIER'] . $record['COURSE_SHORTNAME'] . $record['COURSE_STATE'] . $record['GUID'] . $record['EMAIL'];
         $hash = hash('sha256', $hash_content);
-        $hash_exists = $DB->record_exists('local_psaelmsync_logs', ['sha256hash' => $hash]);
+        $existing_log = $DB->get_record('local_psaelmsync_logs', ['sha256hash' => $hash], 'id, status', IGNORE_MULTIPLE);
+        $hash_exists = $existing_log && $existing_log->status === 'Success';
 
         $is_enrolled = false;
         if ($user && $course) {
