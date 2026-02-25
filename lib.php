@@ -4,6 +4,20 @@ defined('MOODLE_INTERNAL') || die();
 global $CFG;
 require_once($CFG->libdir . '/filelib.php');
 
+/**
+ * Check if a given ELM course ID is on the ignore list.
+ * @param int|string $elm_course_id The COURSE_IDENTIFIER value to check.
+ * @return bool True if the course should be ignored.
+ */
+function local_psaelmsync_is_ignored_course($elm_course_id) {
+    $ignorelist = get_config('local_psaelmsync', 'ignorecourseids');
+    if (empty($ignorelist)) {
+        return false;
+    }
+    $ignored_ids = array_map('trim', explode(',', $ignorelist));
+    return in_array((string)(int)$elm_course_id, $ignored_ids, true);
+}
+
 function local_psaelmsync_sync() {
 
     global $DB;
@@ -136,6 +150,12 @@ function process_enrolment_record($record) {
     // The rest map to CData fields
     $record_date_created = $record['date_created'];
     $elm_course_id = (int) $record['COURSE_IDENTIFIER'];
+
+    // Check the ignore list before doing anything else with this record.
+    if (local_psaelmsync_is_ignored_course($elm_course_id)) {
+        return 'Skipped';
+    }
+
     $enrolment_status = $record['COURSE_STATE'];
     $class_code = $record['COURSE_SHORTNAME'];
     $first_name = $record['FIRST_NAME'];
@@ -146,7 +166,7 @@ function process_enrolment_record($record) {
     $user_activity_id = $record['ACTIVITY_ID'];
     $user_person_id = $record['PERSON_ID'];
     $course_long_name = $record['COURSE_LONG_NAME'];
-    
+
     // We need to create a unique ID here by hashing the relevent info.
     // When we have access to them, we'll want to include $enrolment_id and 
     // record_id in this hash for extra-good unqiueness but right now we're 

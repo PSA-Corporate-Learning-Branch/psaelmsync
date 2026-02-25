@@ -195,6 +195,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
     $person_id = optional_param('person_id', '', PARAM_TEXT);
     $activity_id = optional_param('activity_id', '', PARAM_TEXT);
 
+    // Check the ignore list before processing.
+    if (local_psaelmsync_is_ignored_course($elm_course_id)) {
+        $feedback = "Course ID " . s($elm_course_id) . " is on the ignore list and will not be processed.";
+        $feedback_type = 'warning';
+    } else {
+
     $hash_content = $record_date_created . $elm_course_id . $class_code . $course_state . $user_guid . $user_email;
     $hash = hash('sha256', $hash_content);
 
@@ -327,6 +333,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
             }
         }
     }
+    } // End ignore list else.
 }
 
 // Handle bulk processing
@@ -357,6 +364,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_process'])) {
         $oprid = $record_data['oprid'] ?? '';
         $person_id = $record_data['person_id'] ?? '';
         $activity_id = $record_data['activity_id'] ?? '';
+
+        // Skip courses on the ignore list.
+        if (local_psaelmsync_is_ignored_course($elm_course_id)) {
+            continue;
+        }
 
         $hash_content = $record_date_created . $elm_course_id . $class_code . $course_state . $user_guid . $user_email;
         $hash = hash('sha256', $hash_content);
@@ -579,6 +591,11 @@ if ($has_filters) {
 $processed_records = [];
 if (!empty($data['value'])) {
     foreach ($data['value'] as $record) {
+        // Skip courses on the ignore list entirely.
+        if (local_psaelmsync_is_ignored_course($record['COURSE_IDENTIFIER'])) {
+            continue;
+        }
+
         $user = $DB->get_record('user', ['idnumber' => $record['GUID']]);
         $course = $DB->get_record('course', ['idnumber' => (int)$record['COURSE_IDENTIFIER']], 'id, fullname, shortname');
 

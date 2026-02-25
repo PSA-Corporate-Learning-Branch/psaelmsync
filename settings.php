@@ -52,5 +52,12 @@ if ($hassiteconfig) {
         '',
         PARAM_TEXT));
 
+    $settings->add(new admin_setting_configtext(
+        'local_psaelmsync/ignorecourseids',
+        get_string('ignorecourseids', 'local_psaelmsync'),
+        get_string('ignorecourseids_desc', 'local_psaelmsync'),
+        '',
+        PARAM_TEXT));
+
     $ADMIN->add('localplugins', $settings);
 }

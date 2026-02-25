@@ -63,3 +63,5 @@ $string['elm_course_id'] = 'ELM Course ID';
 $string['email_cdata_lookup'] = 'Email';
 $string['guid_cdata_lookup'] = 'GUID';
 $string['person_id'] = 'Person ID';
+$string['ignorecourseids'] = 'Course ignore list';
+$string['ignorecourseids_desc'] = 'Comma-separated list of ELM COURSE_IDENTIFIER values to ignore during enrolment processing (e.g. 12345,87512,98612). Records for these courses will be skipped entirely without hashing or further checks. Use this for courses destined for a different system.';
