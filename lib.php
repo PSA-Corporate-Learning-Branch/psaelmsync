@@ -18,6 +18,16 @@ function local_psaelmsync_is_ignored_course($elm_course_id) {
     return in_array((string)(int)$elm_course_id, $ignored_ids, true);
 }
 
+/**
+ * The primary function to sync enrolments from the ELM system via the CData API.
+ * This function is designed to be run as a scheduled task and will:
+ * - Fetch enrolment records from the CData API with a date filter.
+ * - Process each record to enrol or suspend users in Moodle courses.
+ * - Log the results of each record processing in a custom log table.
+ * - Send email notifications for any errors encountered during processing.
+ * - Log the overall run details including counts of enrolments, suspensions, errors, and skipped records.
+ * - Check for inactivity and send notifications if no enrolments or suspensions have been processed within a specified timeframe.
+ */
 function local_psaelmsync_sync() {
 
     global $DB;
