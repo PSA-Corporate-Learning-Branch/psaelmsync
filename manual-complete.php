@@ -1,6 +1,22 @@
 <?php
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
- * Manual completion - Progressive disclosure UI for manually posting course completions to CData.
+ * Manual completion - Progressive disclosure UI for manually
+ * posting course completions to CData.
  *
  * Flow:
  * 1. Search/select a course (filtered to completion_opt_in courses)
@@ -8,10 +24,13 @@
  * 3. View completion status and details
  * 4. Post completion to CData if not already completed
  *
- * Author: Allan Haggett <allan.haggett@gov.bc.ca>
+ * @package    local_psaelmsync
+ * @copyright  2025 BC Public Service
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-global $CFG, $DB, $PAGE, $OUTPUT;
+// This file mixes HTML and PHP; disable the per-block docblock check.
+// phpcs:disable moodle.Commenting.MissingDocblock
 
 require_once('../../config.php');
 require_once($CFG->libdir . '/filelib.php');
@@ -25,32 +44,35 @@ require_capability('local/psaelmsync:viewlogs', $context);
 
 $PAGE->set_url('/local/psaelmsync/manual-complete.php');
 $PAGE->set_context($context);
-$PAGE->set_title(get_string('pluginname', 'local_psaelmsync') . ' - Manual Completion');
+$PAGE->set_title(
+    get_string('pluginname', 'local_psaelmsync') . ' - Manual Completion'
+);
 $PAGE->set_heading('Manual Completion');
 
-// Get config
-$completion_apiurl = get_config('local_psaelmsync', 'completion_apiurl');
-$completion_apitoken = get_config('local_psaelmsync', 'completion_apitoken');
+// Get config.
+$completionapiurl = get_config('local_psaelmsync', 'completion_apiurl');
+$completionapitoken = get_config('local_psaelmsync', 'completion_apitoken');
 
-// Get parameters for progressive disclosure
-$course_search = optional_param('course_search', '', PARAM_TEXT);
-$selected_course_id = optional_param('course_id', 0, PARAM_INT);
-$user_search = optional_param('user_search', '', PARAM_TEXT);
-$selected_user_id = optional_param('user_id', 0, PARAM_INT);
+// Get parameters for progressive disclosure.
+$coursesearch = optional_param('course_search', '', PARAM_TEXT);
+$selectedcourseid = optional_param('course_id', 0, PARAM_INT);
+$usersearch = optional_param('user_search', '', PARAM_TEXT);
+$selecteduserid = optional_param('user_id', 0, PARAM_INT);
 
-// Feedback messages
+// Feedback messages.
 $feedback = '';
-$feedback_type = 'info';
+$feedbacktype = 'info';
 
 /**
  * Get courses that have completion_opt_in enabled.
+ *
  * @param string $search Optional search string to filter courses.
  * @return array Array of course records.
  */
 function get_completion_courses($search = '') {
     global $DB;
 
-    // Get courses with completion_opt_in custom field set to 1
+    // Get courses with completion_opt_in custom field set to 1.
     $sql = "SELECT c.id, c.fullname, c.shortname, c.idnumber
             FROM {course} c
             JOIN {customfield_data} cd ON cd.instanceid = c.id
@@ -79,6 +101,7 @@ function get_completion_courses($search = '') {
 
 /**
  * Get users enrolled in a course.
+ *
  * @param int $courseid The Moodle course ID.
  * @param string $search Optional search string to filter users.
  * @return array Array of user records.
@@ -87,14 +110,19 @@ function get_enrolled_users_search($courseid, $search = '') {
     global $DB;
 
     $context = \context_course::instance($courseid);
-    $enrolledusers = get_enrolled_users($context, '', 0, 'u.id, u.firstname, u.lastname, u.email, u.idnumber');
+    $enrolledusers = get_enrolled_users(
+        $context,
+        '',
+        0,
+        'u.id, u.firstname, u.lastname, u.email, u.idnumber'
+    );
 
     if (empty($search)) {
         return array_slice($enrolledusers, 0, 50, true);
     }
 
     $search = strtolower($search);
-    $filtered = array_filter($enrolledusers, function($user) use ($search) {
+    $filtered = array_filter($enrolledusers, function ($user) use ($search) {
         return strpos(strtolower($user->firstname), $search) !== false
             || strpos(strtolower($user->lastname), $search) !== false
             || strpos(strtolower($user->email), $search) !== false
@@ -106,6 +134,7 @@ function get_enrolled_users_search($courseid, $search = '') {
 
 /**
  * Check if user has completed the course in Moodle.
+ *
  * @param int $courseid The Moodle course ID.
  * @param int $userid The Moodle user ID.
  * @return array Completion status with 'completed' key and optional 'timecompleted'.
@@ -115,13 +144,13 @@ function check_moodle_completion($courseid, $userid) {
 
     $completion = $DB->get_record('course_completions', [
         'course' => $courseid,
-        'userid' => $userid
+        'userid' => $userid,
     ]);
 
     if ($completion && $completion->timecompleted) {
         return [
             'completed' => true,
-            'timecompleted' => $completion->timecompleted
+            'timecompleted' => $completion->timecompleted,
         ];
     }
 
@@ -130,11 +159,12 @@ function check_moodle_completion($courseid, $userid) {
 
 /**
  * Check if completion has been logged/sent to CData (local logs).
- * @param int|string $elm_course_id The ELM course identifier.
+ *
+ * @param int|string $elmcourseid The ELM course identifier.
  * @param int $userid The Moodle user ID.
  * @return object|null The log record or null if not found.
  */
-function check_completion_logged($elm_course_id, $userid) {
+function check_completion_logged($elmcourseid, $userid) {
     global $DB;
 
     $log = $DB->get_record_sql(
@@ -144,7 +174,7 @@ function check_completion_logged($elm_course_id, $userid) {
          AND action IN ('Complete', 'Manual Complete')
          ORDER BY timestamp DESC
          LIMIT 1",
-        ['courseid' => $elm_course_id, 'userid' => $userid]
+        ['courseid' => $elmcourseid, 'userid' => $userid]
     );
 
     return $log ?: null;
@@ -152,11 +182,12 @@ function check_completion_logged($elm_course_id, $userid) {
 
 /**
  * Query CData API to check completion status.
+ *
  * @param string $guid The user GUID.
- * @param int|string $elm_course_id The ELM course identifier.
+ * @param int|string $elmcourseid The ELM course identifier.
  * @return array Array with 'success', 'error', 'data', 'http_code' keys.
  */
-function check_cdata_completion($guid, $elm_course_id) {
+function check_cdata_completion($guid, $elmcourseid) {
     $apiurl = get_config('local_psaelmsync', 'completion_apiurl');
     $apitoken = get_config('local_psaelmsync', 'completion_apitoken');
 
@@ -165,22 +196,23 @@ function check_cdata_completion($guid, $elm_course_id) {
             'success' => false,
             'error' => 'Completion API URL or token not configured',
             'data' => null,
-            'http_code' => 0
+            'http_code' => 0,
         ];
     }
 
-    // Query for this specific user/course combination
-    $filter = "GUID+eq+%27" . urlencode($guid) . "%27+and+COURSE_IDENTIFIER+eq+" . urlencode($elm_course_id);
-    $query_url = $apiurl . "?%24filter=" . $filter;
+    // Query for this specific user/course combination.
+    $filter = "GUID+eq+%27" . urlencode($guid)
+        . "%27+and+COURSE_IDENTIFIER+eq+" . urlencode($elmcourseid);
+    $queryurl = $apiurl . "?%24filter=" . $filter;
 
-    $ch = curl_init($query_url);
+    $ch = curl_init($queryurl);
     $options = [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER => [
             "x-cdata-authtoken: " . $apitoken,
-            "Content-Type: application/json"
+            "Content-Type: application/json",
         ],
-        CURLOPT_TIMEOUT => 10
+        CURLOPT_TIMEOUT => 10,
     ];
     curl_setopt_array($ch, $options);
     $response = curl_exec($ch);
@@ -188,36 +220,36 @@ function check_cdata_completion($guid, $elm_course_id) {
     $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
-    // Handle cURL errors
+    // Handle cURL errors.
     if ($response === false) {
         return [
             'success' => false,
             'error' => 'cURL error: ' . $curlerror,
             'data' => null,
-            'http_code' => 0
+            'http_code' => 0,
         ];
     }
 
-    // Handle HTTP errors
+    // Handle HTTP errors.
     if ($httpcode >= 400) {
-        $error_msg = "HTTP {$httpcode}";
+        $errormsg = "HTTP {$httpcode}";
         if ($httpcode == 502) {
-            $error_msg .= ' (Bad Gateway - CData server may be down)';
-        } elseif ($httpcode == 401) {
-            $error_msg .= ' (Unauthorized - check API token)';
-        } elseif ($httpcode == 403) {
-            $error_msg .= ' (Forbidden - check VPN/IP whitelist)';
+            $errormsg .= ' (Bad Gateway - CData server may be down)';
+        } else if ($httpcode == 401) {
+            $errormsg .= ' (Unauthorized - check API token)';
+        } else if ($httpcode == 403) {
+            $errormsg .= ' (Forbidden - check VPN/IP whitelist)';
         }
         return [
             'success' => false,
-            'error' => $error_msg,
+            'error' => $errormsg,
             'data' => null,
             'http_code' => $httpcode,
-            'response' => substr($response, 0, 500)
+            'response' => substr($response, 0, 500),
         ];
     }
 
-    // Parse response
+    // Parse response.
     $data = json_decode($response, true);
     if (json_last_error() !== JSON_ERROR_NONE) {
         return [
@@ -225,17 +257,20 @@ function check_cdata_completion($guid, $elm_course_id) {
             'error' => 'Invalid JSON response: ' . json_last_error_msg(),
             'data' => null,
             'http_code' => $httpcode,
-            'response' => substr($response, 0, 500)
+            'response' => substr($response, 0, 500),
         ];
     }
 
-    // Check if we got any records
+    // Check if we got any records.
     $records = $data['value'] ?? [];
-    $completed_record = null;
+    $completedrecord = null;
 
     foreach ($records as $record) {
-        if (isset($record['COURSE_STATE']) && $record['COURSE_STATE'] === 'Complete') {
-            $completed_record = $record;
+        if (
+            isset($record['COURSE_STATE'])
+            && $record['COURSE_STATE'] === 'Complete'
+        ) {
+            $completedrecord = $record;
             break;
         }
     }
@@ -243,30 +278,32 @@ function check_cdata_completion($guid, $elm_course_id) {
     return [
         'success' => true,
         'error' => null,
-        'data' => $completed_record,
+        'data' => $completedrecord,
         'all_records' => $records,
-        'http_code' => $httpcode
+        'http_code' => $httpcode,
     ];
 }
 
 /**
  * Get the enrolment record from logs (needed for completion POST).
- * @param int|string $elm_course_id The ELM course identifier.
+ *
+ * @param int|string $elmcourseid The ELM course identifier.
  * @param int $userid The Moodle user ID.
  * @return object|null The enrolment log record or null if not found.
  */
-function get_enrolment_record($elm_course_id, $userid) {
+function get_enrolment_record($elmcourseid, $userid) {
     global $DB;
 
     $record = $DB->get_record_sql(
-        "SELECT elm_enrolment_id, class_code, sha256hash, oprid, person_id, activity_id
+        "SELECT elm_enrolment_id, class_code,
+                sha256hash, oprid, person_id, activity_id
          FROM {local_psaelmsync_logs}
          WHERE elm_course_id = :courseid
          AND user_id = :userid
          AND action IN ('Enrol', 'Manual Enrol')
          ORDER BY timestamp DESC
          LIMIT 1",
-        ['courseid' => $elm_course_id, 'userid' => $userid]
+        ['courseid' => $elmcourseid, 'userid' => $userid]
     );
 
     return $record ?: null;
@@ -274,50 +311,51 @@ function get_enrolment_record($elm_course_id, $userid) {
 
 /**
  * Post completion to CData API.
+ *
  * @param object $user The Moodle user object.
  * @param object $course The Moodle course object.
- * @param object $enrolment_record The enrolment log record from local_psaelmsync_logs.
+ * @param object $enrolmentrecord The enrolment log record.
  * @return array Array with 'success', 'error', 'http_code' keys.
  */
-function post_completion_to_cdata($user, $course, $enrolment_record) {
+function post_completion_to_cdata($user, $course, $enrolmentrecord) {
     global $DB;
 
     $apiurl = get_config('local_psaelmsync', 'completion_apiurl');
     $apitoken = get_config('local_psaelmsync', 'completion_apitoken');
 
-    $elm_course_id = $course->idnumber;
-    $elm_enrolment_id = $enrolment_record->elm_enrolment_id;
-    $class_code = $enrolment_record->class_code;
-    $sha256hash = $enrolment_record->sha256hash;
+    $elmcourseid = $course->idnumber;
+    $elmenrolmentid = $enrolmentrecord->elm_enrolment_id;
+    $classcode = $enrolmentrecord->class_code;
+    $sha256hash = $enrolmentrecord->sha256hash;
 
     $data = [
         'COURSE_COMPLETE_DATE' => date('Y-m-d'),
         'COURSE_STATE' => 'Complete',
-        'ENROLMENT_ID' => (int) $elm_enrolment_id,
+        'ENROLMENT_ID' => (int) $elmenrolmentid,
         'USER_STATE' => 'Active',
         'USER_EFFECTIVE_DATE' => '2017-02-14',
-        'COURSE_IDENTIFIER' => (int) $elm_course_id,
-        'COURSE_SHORTNAME' => $class_code,
+        'COURSE_IDENTIFIER' => (int) $elmcourseid,
+        'COURSE_SHORTNAME' => $classcode,
         'EMAIL' => $user->email,
         'GUID' => $user->idnumber,
         'FIRST_NAME' => $user->firstname,
         'LAST_NAME' => $user->lastname,
-        'OPRID' => $enrolment_record->oprid ?? '',
-        'ACTIVITY_ID' => $enrolment_record->activity_id ?? 0,
-        'PERSON_ID' => $enrolment_record->person_id ?? 0
+        'OPRID' => $enrolmentrecord->oprid ?? '',
+        'ACTIVITY_ID' => $enrolmentrecord->activity_id ?? 0,
+        'PERSON_ID' => $enrolmentrecord->person_id ?? 0,
     ];
 
-    $jsonData = json_encode($data);
+    $jsondata = json_encode($data);
 
     $ch = curl_init($apiurl);
     $options = [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => $jsonData,
+        CURLOPT_POSTFIELDS => $jsondata,
         CURLOPT_HTTPHEADER => [
             "x-cdata-authtoken: " . $apitoken,
-            "Content-Type: application/json"
-        ]
+            "Content-Type: application/json",
+        ],
     ];
     curl_setopt_array($ch, $options);
     $response = curl_exec($ch);
@@ -325,40 +363,42 @@ function post_completion_to_cdata($user, $course, $enrolment_record) {
     $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
-    // Log the completion attempt
+    // Log the completion attempt.
     $log = [
         'record_id' => time(),
         'record_date_created' => date('Y-m-d H:i:s'),
         'sha256hash' => $sha256hash,
         'course_id' => $course->id,
-        'elm_course_id' => $elm_course_id,
-        'class_code' => $class_code,
+        'elm_course_id' => $elmcourseid,
+        'class_code' => $classcode,
         'course_name' => $course->fullname,
         'user_id' => $user->id,
         'user_firstname' => $user->firstname,
         'user_lastname' => $user->lastname,
         'user_guid' => $user->idnumber,
         'user_email' => $user->email,
-        'elm_enrolment_id' => $elm_enrolment_id,
-        'oprid' => $enrolment_record->oprid ?? '',
-        'person_id' => $enrolment_record->person_id ?? '',
-        'activity_id' => $enrolment_record->activity_id ?? '',
+        'elm_enrolment_id' => $elmenrolmentid,
+        'oprid' => $enrolmentrecord->oprid ?? '',
+        'person_id' => $enrolmentrecord->person_id ?? '',
+        'activity_id' => $enrolmentrecord->activity_id ?? '',
         'action' => 'Manual Complete',
         'status' => 'Success',
         'timestamp' => time(),
-        'notes' => ''
+        'notes' => '',
     ];
 
     if ($response === false || $httpcode >= 400) {
         $log['status'] = 'Error';
-        $log['notes'] = 'cURL failed: ' . ($curlerror ?: 'HTTP ' . $httpcode) . ' Response: ' . substr($response, 0, 500);
+        $log['notes'] = 'cURL failed: '
+            . ($curlerror ?: 'HTTP ' . $httpcode)
+            . ' Response: ' . substr($response, 0, 500);
         $DB->insert_record('local_psaelmsync_logs', (object)$log);
         return [
             'success' => false,
             'error' => $curlerror ?: 'HTTP ' . $httpcode,
             'response' => $response,
             'http_code' => $httpcode,
-            'payload' => $data
+            'payload' => $data,
         ];
     }
 
@@ -367,58 +407,96 @@ function post_completion_to_cdata($user, $course, $enrolment_record) {
         'success' => true,
         'response' => $response,
         'http_code' => $httpcode,
-        'payload' => $data
+        'payload' => $data,
     ];
 }
 
-// Handle completion POST
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['post_completion'])) {
+// Handle completion POST.
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_POST['post_completion'])
+) {
     require_sesskey();
 
-    $post_course_id = required_param('course_id', PARAM_INT);
-    $post_user_id = required_param('user_id', PARAM_INT);
+    $postcourseid = required_param('course_id', PARAM_INT);
+    $postuserid = required_param('user_id', PARAM_INT);
 
-    $course = $DB->get_record('course', ['id' => $post_course_id], '*', MUST_EXIST);
-    $user = $DB->get_record('user', ['id' => $post_user_id], '*', MUST_EXIST);
+    $course = $DB->get_record(
+        'course',
+        ['id' => $postcourseid],
+        '*',
+        MUST_EXIST
+    );
+    $user = $DB->get_record(
+        'user',
+        ['id' => $postuserid],
+        '*',
+        MUST_EXIST
+    );
 
-    // Get enrolment record
-    $enrolment_record = get_enrolment_record($course->idnumber, $user->id);
+    // Get enrolment record.
+    $enrolmentrecord = get_enrolment_record(
+        $course->idnumber,
+        $user->id
+    );
 
-    if (!$enrolment_record) {
-        $feedback = "Cannot post completion: No enrolment record found in sync logs for this user/course combination.";
-        $feedback_type = 'danger';
+    if (!$enrolmentrecord) {
+        $feedback = "Cannot post completion: No enrolment record found"
+            . " in sync logs for this user/course combination.";
+        $feedbacktype = 'danger';
     } else {
-        $result = post_completion_to_cdata($user, $course, $enrolment_record);
+        $result = post_completion_to_cdata(
+            $user,
+            $course,
+            $enrolmentrecord
+        );
 
         if ($result['success']) {
-            $feedback = "Completion posted successfully for " . s($user->firstname) . " " . s($user->lastname) . " in " . s($course->fullname) . ".";
-            $feedback_type = 'success';
+            $feedback = "Completion posted successfully for "
+                . s($user->firstname) . " " . s($user->lastname)
+                . " in " . s($course->fullname) . ".";
+            $feedbacktype = 'success';
         } else {
-            $feedback = "Failed to post completion. HTTP " . s($result['http_code']) . ": " . s($result['error']);
+            $feedback = "Failed to post completion. HTTP "
+                . s($result['http_code']) . ": "
+                . s($result['error']);
             if ($result['response']) {
-                $feedback .= "<br><small>Response: " . htmlspecialchars(substr($result['response'], 0, 500)) . "</small>";
+                $feedback .= "<br><small>Response: "
+                    . htmlspecialchars(
+                        substr($result['response'], 0, 500)
+                    )
+                    . "</small>";
             }
-            $feedback_type = 'danger';
+            $feedbacktype = 'danger';
         }
     }
 
-    // Keep selections after POST
-    $selected_course_id = $post_course_id;
-    $selected_user_id = $post_user_id;
+    // Keep selections after POST.
+    $selectedcourseid = $postcourseid;
+    $selecteduserid = $postuserid;
 }
 
-// Load selected course and user if set
-$selected_course = null;
-$selected_user = null;
+// Load selected course and user if set.
+$selectedcourse = null;
+$selecteduser = null;
 
-if ($selected_course_id) {
-    $selected_course = $DB->get_record('course', ['id' => $selected_course_id]);
+if ($selectedcourseid) {
+    $selectedcourse = $DB->get_record(
+        'course',
+        ['id' => $selectedcourseid]
+    );
 }
-if ($selected_user_id) {
-    $selected_user = $DB->get_record('user', ['id' => $selected_user_id]);
+if ($selecteduserid) {
+    $selecteduser = $DB->get_record(
+        'user',
+        ['id' => $selecteduserid]
+    );
 }
 
 echo $OUTPUT->header();
+// phpcs:disable Generic.WhiteSpace.ScopeIndent
+// phpcs:disable Squiz.WhiteSpace.ScopeClosingBrace
+// phpcs:disable Squiz.ControlStructures.ElseIfDeclaration.NotAllowed
 ?>
 
 <style>
@@ -552,30 +630,48 @@ echo $OUTPUT->header();
 <nav aria-label="PSA ELM Sync sections">
     <ul class="nav nav-tabs mb-3">
         <li class="nav-item">
-            <a class="nav-link" href="/admin/settings.php?section=local_psaelmsync">Settings</a>
+            <a class="nav-link"
+               href="/admin/settings.php?section=local_psaelmsync">
+                Settings</a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" href="/local/psaelmsync/dashboard.php">Learner Dashboard</a>
+            <a class="nav-link"
+               href="/local/psaelmsync/dashboard.php">
+                Learner Dashboard</a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" href="/local/psaelmsync/dashboard-courses.php">Course Dashboard</a>
+            <a class="nav-link"
+               href="/local/psaelmsync/dashboard-courses.php">
+                Course Dashboard</a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" href="/local/psaelmsync/dashboard-intake.php">Intake Run Dashboard</a>
+            <a class="nav-link"
+               href="/local/psaelmsync/dashboard-intake.php">
+                Intake Run Dashboard</a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" href="/local/psaelmsync/manual-intake.php">Manual Intake</a>
+            <a class="nav-link"
+               href="/local/psaelmsync/manual-intake.php">
+                Manual Intake</a>
         </li>
         <li class="nav-item">
-            <a class="nav-link active" href="/local/psaelmsync/manual-complete.php" aria-current="page">Manual Complete</a>
+            <a class="nav-link active"
+               href="/local/psaelmsync/manual-complete.php"
+               aria-current="page">
+                Manual Complete</a>
         </li>
     </ul>
 </nav>
 
-<?php if (!empty($feedback)): ?>
-<div class="alert alert-<?php echo s($feedback_type); ?> alert-dismissible fade show" role="alert">
-    <?php echo $feedback; // Contains intentional HTML; user data is escaped at construction ?>
-    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+<?php if (!empty($feedback)) : ?>
+<div class="alert alert-<?php echo s($feedbacktype); ?>"
+     role="alert">
+    <?php
+    // Contains intentional HTML; user data is escaped at construction.
+    echo $feedback;
+    ?>
+    <button type="button" class="close"
+            data-dismiss="alert" aria-label="Close">
         <span aria-hidden="true">&times;</span>
     </button>
 </div>
@@ -584,106 +680,191 @@ echo $OUTPUT->header();
 <div class="completion-wizard">
 
     <!-- Step 1: Select Course -->
-    <div class="wizard-step <?php echo $selected_course ? 'completed' : 'active'; ?>">
+    <div class="wizard-step <?php
+        echo $selectedcourse ? 'completed' : 'active'; ?>">
         <h5><span class="step-number">1</span> Select Course</h5>
 
-        <?php if ($selected_course): ?>
+        <?php if ($selectedcourse) : ?>
             <div class="selected-item">
                 <div>
-                    <strong><?php echo htmlspecialchars($selected_course->fullname); ?></strong>
+                    <strong><?php
+                        echo htmlspecialchars($selectedcourse->fullname);
+                    ?></strong>
                     <br><small class="text-muted">
-                        <?php echo htmlspecialchars($selected_course->shortname); ?>
-                        | ELM ID: <?php echo htmlspecialchars($selected_course->idnumber); ?>
+                        <?php
+                        echo htmlspecialchars(
+                            $selectedcourse->shortname
+                        );
+                        ?>
+                        | ELM ID: <?php
+                        echo htmlspecialchars(
+                            $selectedcourse->idnumber
+                        );
+                        ?>
                     </small>
                 </div>
-                <a href="<?php echo $PAGE->url; ?>" class="btn btn-sm btn-outline-secondary">Change</a>
+                <a href="<?php echo $PAGE->url; ?>"
+                   class="btn btn-sm btn-outline-secondary">
+                    Change</a>
             </div>
-        <?php else: ?>
-            <p class="text-muted mb-2">Search for courses with completion reporting enabled.</p>
-            <form method="get" action="<?php echo $PAGE->url; ?>" class="mb-2" role="search">
-                <label for="course-search" class="sr-only">Search for courses</label>
+        <?php else : ?>
+            <p class="text-muted mb-2">
+                Search for courses with completion reporting enabled.
+            </p>
+            <form method="get"
+                  action="<?php echo $PAGE->url; ?>"
+                  class="mb-2" role="search">
+                <label for="course-search" class="sr-only">
+                    Search for courses</label>
                 <div class="input-group">
-                    <input type="text" id="course-search" name="course_search" class="form-control"
-                           placeholder="Search by course name, shortname, or ELM ID..."
-                           value="<?php echo s($course_search); ?>" autofocus>
+                    <input type="text" id="course-search"
+                           name="course_search"
+                           class="form-control"
+                           placeholder="Search by name, shortname, or ELM ID..."
+                           value="<?php echo s($coursesearch); ?>"
+                           autofocus>
                     <div class="input-group-append">
-                        <button type="submit" class="btn btn-primary">Search</button>
+                        <button type="submit"
+                                class="btn btn-primary">
+                            Search</button>
                     </div>
                 </div>
             </form>
 
             <?php
-            $courses = get_completion_courses($course_search);
-            if (!empty($courses)):
+            $courses = get_completion_courses($coursesearch);
+            if (!empty($courses)) :
             ?>
             <div class="search-results">
-                <?php foreach ($courses as $course): ?>
-                <a href="<?php echo $PAGE->url; ?>?course_id=<?php echo $course->id; ?>" class="search-result-item text-decoration-none text-dark">
+                <?php foreach ($courses as $course) : ?>
+                <a href="<?php echo $PAGE->url;
+                    ?>?course_id=<?php echo $course->id; ?>"
+                   class="search-result-item text-decoration-none text-dark">
                     <div>
-                        <strong><?php echo htmlspecialchars($course->fullname); ?></strong>
+                        <strong><?php
+                            echo htmlspecialchars($course->fullname);
+                        ?></strong>
                         <br><small class="text-muted">
-                            <?php echo htmlspecialchars($course->shortname); ?>
-                            | ELM ID: <?php echo htmlspecialchars($course->idnumber); ?>
+                            <?php
+                            echo htmlspecialchars($course->shortname);
+                            ?>
+                            | ELM ID: <?php
+                            echo htmlspecialchars($course->idnumber);
+                            ?>
                         </small>
                     </div>
                     <span class="badge badge-secondary">Select</span>
                 </a>
                 <?php endforeach; ?>
             </div>
-            <?php elseif (!empty($course_search)): ?>
-            <div class="alert alert-info mb-0">No courses found matching "<?php echo s($course_search); ?>"</div>
-            <?php else: ?>
-            <div class="alert alert-secondary mb-0">Enter a search term to find courses, or leave blank to see all completion-enabled courses.</div>
+            <?php elseif (!empty($coursesearch)) : ?>
+            <div class="alert alert-info mb-0">
+                No courses found matching
+                "<?php echo s($coursesearch); ?>"
+            </div>
+            <?php else : ?>
+            <div class="alert alert-secondary mb-0">
+                Enter a search term to find courses, or leave blank
+                to see all completion-enabled courses.
+            </div>
             <?php endif; ?>
         <?php endif; ?>
     </div>
 
     <!-- Step 2: Select User -->
-    <div class="wizard-step <?php echo !$selected_course ? 'disabled' : ($selected_user ? 'completed' : 'active'); ?>">
+    <div class="wizard-step <?php
+        if (!$selectedcourse) {
+            echo 'disabled';
+        } else if ($selecteduser) {
+            echo 'completed';
+        } else {
+            echo 'active';
+        }
+    ?>">
         <h5><span class="step-number">2</span> Select Learner</h5>
 
-        <?php if (!$selected_course): ?>
+        <?php if (!$selectedcourse) : ?>
             <p class="text-muted mb-0">Select a course first.</p>
-        <?php elseif ($selected_user): ?>
+        <?php elseif ($selecteduser) : ?>
             <div class="selected-item">
                 <div>
-                    <strong><?php echo htmlspecialchars($selected_user->firstname . ' ' . $selected_user->lastname); ?></strong>
+                    <strong><?php
+                        echo htmlspecialchars(
+                            $selecteduser->firstname
+                            . ' ' . $selecteduser->lastname
+                        );
+                    ?></strong>
                     <br><small class="text-muted">
-                        <?php echo htmlspecialchars($selected_user->email); ?>
-                        | GUID: <?php echo htmlspecialchars($selected_user->idnumber); ?>
+                        <?php
+                        echo htmlspecialchars($selecteduser->email);
+                        ?>
+                        | GUID: <?php
+                        echo htmlspecialchars(
+                            $selecteduser->idnumber
+                        );
+                        ?>
                     </small>
                 </div>
-                <a href="<?php echo $PAGE->url; ?>?course_id=<?php echo $selected_course->id; ?>" class="btn btn-sm btn-outline-secondary">Change</a>
+                <a href="<?php echo $PAGE->url;
+                    ?>?course_id=<?php
+                    echo $selectedcourse->id; ?>"
+                   class="btn btn-sm btn-outline-secondary">
+                    Change</a>
             </div>
-        <?php else: ?>
-            <p class="text-muted mb-2">Search for users enrolled in this course.</p>
-            <form method="get" action="<?php echo $PAGE->url; ?>" class="mb-2" role="search">
-                <input type="hidden" name="course_id" value="<?php echo $selected_course->id; ?>">
-                <label for="user-search" class="sr-only">Search for enrolled users</label>
+        <?php else : ?>
+            <p class="text-muted mb-2">
+                Search for users enrolled in this course.
+            </p>
+            <form method="get"
+                  action="<?php echo $PAGE->url; ?>"
+                  class="mb-2" role="search">
+                <input type="hidden" name="course_id"
+                       value="<?php echo $selectedcourse->id; ?>">
+                <label for="user-search" class="sr-only">
+                    Search for enrolled users</label>
                 <div class="input-group">
-                    <input type="text" id="user-search" name="user_search" class="form-control"
+                    <input type="text" id="user-search"
+                           name="user_search"
+                           class="form-control"
                            placeholder="Search by name, email, or GUID..."
-                           value="<?php echo s($user_search); ?>" autofocus>
+                           value="<?php echo s($usersearch); ?>"
+                           autofocus>
                     <div class="input-group-append">
-                        <button type="submit" class="btn btn-primary">Search</button>
+                        <button type="submit"
+                                class="btn btn-primary">
+                            Search</button>
                     </div>
                 </div>
             </form>
 
             <?php
-            $users = get_enrolled_users_search($selected_course->id, $user_search);
-            if (!empty($users)):
+            $users = get_enrolled_users_search(
+                $selectedcourse->id,
+                $usersearch
+            );
+            if (!empty($users)) :
             ?>
             <div class="search-results">
-                <?php foreach ($users as $user): ?>
-                <a href="<?php echo $PAGE->url; ?>?course_id=<?php echo $selected_course->id; ?>&user_id=<?php echo $user->id; ?>"
+                <?php foreach ($users as $user) : ?>
+                <a href="<?php echo $PAGE->url;
+                    ?>?course_id=<?php echo $selectedcourse->id;
+                    ?>&amp;user_id=<?php echo $user->id; ?>"
                    class="search-result-item text-decoration-none text-dark">
                     <div>
-                        <strong><?php echo htmlspecialchars($user->firstname . ' ' . $user->lastname); ?></strong>
+                        <strong><?php
+                            echo htmlspecialchars(
+                                $user->firstname
+                                . ' ' . $user->lastname
+                            );
+                        ?></strong>
                         <br><small class="text-muted">
-                            <?php echo htmlspecialchars($user->email); ?>
-                            <?php if ($user->idnumber): ?>
-                            | GUID: <?php echo htmlspecialchars($user->idnumber); ?>
+                            <?php
+                            echo htmlspecialchars($user->email);
+                            ?>
+                            <?php if ($user->idnumber) : ?>
+                            | GUID: <?php
+                            echo htmlspecialchars($user->idnumber);
+                            ?>
                             <?php endif; ?>
                         </small>
                     </div>
@@ -691,30 +872,58 @@ echo $OUTPUT->header();
                 </a>
                 <?php endforeach; ?>
             </div>
-            <?php elseif (!empty($user_search)): ?>
-            <div class="alert alert-info mb-0">No enrolled users found matching "<?php echo s($user_search); ?>"</div>
-            <?php else: ?>
-            <div class="alert alert-secondary mb-0">Enter a search term to find enrolled users, or leave blank to see all enrolled users (first 50).</div>
+            <?php elseif (!empty($usersearch)) : ?>
+            <div class="alert alert-info mb-0">
+                No enrolled users found matching
+                "<?php echo s($usersearch); ?>"
+            </div>
+            <?php else : ?>
+            <div class="alert alert-secondary mb-0">
+                Enter a search term to find enrolled users,
+                or leave blank to see all enrolled users (first 50).
+            </div>
             <?php endif; ?>
         <?php endif; ?>
     </div>
 
     <!-- Step 3: Review and Complete -->
-    <div class="wizard-step <?php echo (!$selected_course || !$selected_user) ? 'disabled' : 'active'; ?>">
-        <h5><span class="step-number">3</span> Review & Post Completion</h5>
+    <div class="wizard-step <?php
+        echo (!$selectedcourse || !$selecteduser)
+            ? 'disabled' : 'active'; ?>">
+        <h5>
+            <span class="step-number">3</span>
+            Review &amp; Post Completion
+        </h5>
 
-        <?php if (!$selected_course || !$selected_user): ?>
-            <p class="text-muted mb-0">Select a course and learner first.</p>
-        <?php else:
-            // Get all the details we need
-            $moodle_completion = check_moodle_completion($selected_course->id, $selected_user->id);
-            $completion_log = check_completion_logged($selected_course->idnumber, $selected_user->id);
-            $enrolment_record = get_enrolment_record($selected_course->idnumber, $selected_user->id);
+        <?php if (!$selectedcourse || !$selecteduser) : ?>
+            <p class="text-muted mb-0">
+                Select a course and learner first.
+            </p>
+        <?php else :
+            // Get all the details we need.
+            $moodlecompletion = check_moodle_completion(
+                $selectedcourse->id,
+                $selecteduser->id
+            );
+            $completionlog = check_completion_logged(
+                $selectedcourse->idnumber,
+                $selecteduser->id
+            );
+            $enrolmentrecord = get_enrolment_record(
+                $selectedcourse->idnumber,
+                $selecteduser->id
+            );
 
-            // Query CData API for actual completion status (only if user has GUID)
-            $cdata_status = null;
-            if (!empty($selected_user->idnumber) && !empty($selected_course->idnumber)) {
-                $cdata_status = check_cdata_completion($selected_user->idnumber, $selected_course->idnumber);
+            // Query CData API for actual completion status.
+            $cdatastatus = null;
+            if (
+                !empty($selecteduser->idnumber)
+                && !empty($selectedcourse->idnumber)
+            ) {
+                $cdatastatus = check_cdata_completion(
+                    $selecteduser->idnumber,
+                    $selectedcourse->idnumber
+                );
             }
         ?>
             <div class="completion-details">
@@ -723,38 +932,82 @@ echo $OUTPUT->header();
                         <h6>Learner Details</h6>
                         <div class="detail-row">
                             <span class="label">Name:</span>
-                            <span><?php echo htmlspecialchars($selected_user->firstname . ' ' . $selected_user->lastname); ?></span>
+                            <span><?php
+                                echo htmlspecialchars(
+                                    $selecteduser->firstname
+                                    . ' '
+                                    . $selecteduser->lastname
+                                );
+                            ?></span>
                         </div>
                         <div class="detail-row">
                             <span class="label">Email:</span>
-                            <span><?php echo htmlspecialchars($selected_user->email); ?></span>
+                            <span><?php
+                                echo htmlspecialchars(
+                                    $selecteduser->email
+                                );
+                            ?></span>
                         </div>
                         <div class="detail-row">
                             <span class="label">GUID:</span>
-                            <span><code><?php echo htmlspecialchars($selected_user->idnumber ?: 'Not set'); ?></code></span>
+                            <span><code><?php
+                                echo htmlspecialchars(
+                                    $selecteduser->idnumber
+                                    ?: 'Not set'
+                                );
+                            ?></code></span>
                         </div>
                         <div class="detail-row">
                             <span class="label">Moodle ID:</span>
-                            <span><a href="/user/view.php?id=<?php echo $selected_user->id; ?>" target="_blank" ><?php echo $selected_user->id; ?><span class="sr-only"> (opens in new window)</span></a></span>
+                            <span>
+                                <a href="/user/view.php?id=<?php
+                                    echo $selecteduser->id;
+                                ?>" target="_blank"><?php
+                                    echo $selecteduser->id;
+                                ?><span class="sr-only">
+                                    (opens in new window)
+                                </span></a>
+                            </span>
                         </div>
                     </div>
                     <div class="detail-panel">
                         <h6>Course Details</h6>
                         <div class="detail-row">
                             <span class="label">Course:</span>
-                            <span><?php echo htmlspecialchars($selected_course->fullname); ?></span>
+                            <span><?php
+                                echo htmlspecialchars(
+                                    $selectedcourse->fullname
+                                );
+                            ?></span>
                         </div>
                         <div class="detail-row">
                             <span class="label">Shortname:</span>
-                            <span><?php echo htmlspecialchars($selected_course->shortname); ?></span>
+                            <span><?php
+                                echo htmlspecialchars(
+                                    $selectedcourse->shortname
+                                );
+                            ?></span>
                         </div>
                         <div class="detail-row">
                             <span class="label">ELM Course ID:</span>
-                            <span><code><?php echo htmlspecialchars($selected_course->idnumber ?: 'Not set'); ?></code></span>
+                            <span><code><?php
+                                echo htmlspecialchars(
+                                    $selectedcourse->idnumber
+                                    ?: 'Not set'
+                                );
+                            ?></code></span>
                         </div>
                         <div class="detail-row">
                             <span class="label">Moodle ID:</span>
-                            <span><a href="/course/view.php?id=<?php echo $selected_course->id; ?>" target="_blank" ><?php echo $selected_course->id; ?><span class="sr-only"> (opens in new window)</span></a></span>
+                            <span>
+                                <a href="/course/view.php?id=<?php
+                                    echo $selectedcourse->id;
+                                ?>" target="_blank"><?php
+                                    echo $selectedcourse->id;
+                                ?><span class="sr-only">
+                                    (opens in new window)
+                                </span></a>
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -764,149 +1017,295 @@ echo $OUTPUT->header();
                 <div class="detail-grid">
                     <div class="detail-panel">
                         <h6>Moodle Completion Status</h6>
-                        <?php if ($moodle_completion['completed']): ?>
+                        <?php if ($moodlecompletion['completed']) : ?>
                             <div class="text-success">
                                 <strong>Completed</strong>
-                                <br><small>on <?php echo date('Y-m-d H:i', $moodle_completion['timecompleted']); ?></small>
+                                <br><small>on <?php
+                                    echo date(
+                                        'Y-m-d H:i',
+                                        $moodlecompletion['timecompleted']
+                                    );
+                                ?></small>
                             </div>
-                        <?php else: ?>
+                        <?php else : ?>
                             <div class="text-warning">
-                                <strong>Not completed in Moodle</strong>
-                                <br><small>User has not met completion criteria</small>
+                                <strong>
+                                    Not completed in Moodle
+                                </strong>
+                                <br><small>
+                                    User has not met completion criteria
+                                </small>
                             </div>
                         <?php endif; ?>
                     </div>
                     <div class="detail-panel">
                         <h6>CData API Status</h6>
-                        <?php if (!$cdata_status): ?>
+                        <?php if (!$cdatastatus) : ?>
                             <div class="text-muted">
                                 <strong>Cannot check</strong>
-                                <br><small>User GUID or Course ID not set</small>
+                                <br><small>
+                                    User GUID or Course ID not set
+                                </small>
                             </div>
-                        <?php elseif (!$cdata_status['success']): ?>
+                        <?php elseif (!$cdatastatus['success']) : ?>
                             <div class="text-danger">
                                 <strong>API Error</strong>
-                                <br><small><?php echo htmlspecialchars($cdata_status['error']); ?></small>
-                                <?php if (!empty($cdata_status['response'])): ?>
-                                <br><small class="text-muted"><?php echo htmlspecialchars(substr($cdata_status['response'], 0, 200)); ?></small>
+                                <br><small><?php
+                                    echo htmlspecialchars(
+                                        $cdatastatus['error']
+                                    );
+                                ?></small>
+                                <?php if (!empty($cdatastatus['response'])) : ?>
+                                <br><small class="text-muted"><?php
+                                    echo htmlspecialchars(
+                                        substr(
+                                            $cdatastatus['response'],
+                                            0,
+                                            200
+                                        )
+                                    );
+                                ?></small>
                                 <?php endif; ?>
                             </div>
-                        <?php elseif ($cdata_status['data']): ?>
+                        <?php elseif ($cdatastatus['data']) : ?>
                             <div class="text-success">
                                 <strong>Completed in CData</strong>
-                                <?php if (!empty($cdata_status['data']['COURSE_COMPLETE_DATE'])): ?>
-                                <br><small>Date: <?php echo htmlspecialchars($cdata_status['data']['COURSE_COMPLETE_DATE']); ?></small>
+                                <?php
+                                $cdate = $cdatastatus['data']['COURSE_COMPLETE_DATE'] ?? '';
+                                if (!empty($cdate)) : ?>
+                                <br><small>Date: <?php
+                                    echo htmlspecialchars($cdate);
+                                ?></small>
                                 <?php endif; ?>
-                                <?php if (!empty($cdata_status['data']['COURSE_STATE'])): ?>
-                                <br><small>State: <?php echo htmlspecialchars($cdata_status['data']['COURSE_STATE']); ?></small>
+                                <?php
+                                $cstate = $cdatastatus['data']['COURSE_STATE'] ?? '';
+                                if (!empty($cstate)) : ?>
+                                <br><small>State: <?php
+                                    echo htmlspecialchars($cstate);
+                                ?></small>
                                 <?php endif; ?>
                             </div>
-                        <?php else: ?>
+                        <?php else : ?>
                             <div class="text-warning">
-                                <strong>Not completed in CData</strong>
-                                <br><small>No completion record found</small>
+                                <strong>
+                                    Not completed in CData
+                                </strong>
+                                <br><small>
+                                    No completion record found
+                                </small>
                             </div>
                         <?php endif; ?>
 
-                        <?php if ($completion_log): ?>
+                        <?php if ($completionlog) : ?>
                         <div class="mt-2 pt-2 border-top">
-                            <small class="text-muted">Local log:</small>
+                            <small class="text-muted">
+                                Local log:</small>
                             <br><small>
-                                <?php echo htmlspecialchars($completion_log->action); ?>
-                                (<?php echo $completion_log->status === 'Success' ? '<span class="text-success">Success</span>' : '<span class="text-danger">Error</span>'; ?>)
-                                on <?php echo date('Y-m-d H:i', $completion_log->timestamp); ?>
+                                <?php
+                                echo htmlspecialchars(
+                                    $completionlog->action
+                                );
+                                ?>
+                                (<?php
+                                if ($completionlog->status === 'Success') {
+                                    echo '<span class="text-success">'
+                                        . 'Success</span>';
+                                } else {
+                                    echo '<span class="text-danger">'
+                                        . 'Error</span>';
+                                }
+                                ?>)
+                                on <?php
+                                echo date(
+                                    'Y-m-d H:i',
+                                    $completionlog->timestamp
+                                );
+                                ?>
                             </small>
                         </div>
                         <?php endif; ?>
                     </div>
                 </div>
 
-                <?php if ($enrolment_record): ?>
+                <?php if ($enrolmentrecord) : ?>
                 <div class="detail-panel mt-3">
                     <h6>Enrolment Record (from sync logs)</h6>
                     <div class="detail-row">
-                        <span class="label">ELM Enrolment ID:</span>
-                        <span><code><?php echo htmlspecialchars($enrolment_record->elm_enrolment_id); ?></code></span>
+                        <span class="label">
+                            ELM Enrolment ID:</span>
+                        <span><code><?php
+                            echo htmlspecialchars(
+                                $enrolmentrecord->elm_enrolment_id
+                            );
+                        ?></code></span>
                     </div>
                     <div class="detail-row">
                         <span class="label">Class Code:</span>
-                        <span><?php echo htmlspecialchars($enrolment_record->class_code); ?></span>
+                        <span><?php
+                            echo htmlspecialchars(
+                                $enrolmentrecord->class_code
+                            );
+                        ?></span>
                     </div>
                 </div>
                 <?php endif; ?>
 
                 <!-- Status and Action -->
-                <?php if (!$enrolment_record): ?>
+                <?php if (!$enrolmentrecord) : ?>
                     <div class="status-indicator no-enrolment">
                         <strong>Cannot post completion</strong>
-                        <p class="mb-0 mt-1">No enrolment record found in sync logs. This user may have been enrolled before the sync system was active, or through a different method.</p>
+                        <p class="mb-0 mt-1">
+                            No enrolment record found in sync logs.
+                            This user may have been enrolled before the
+                            sync system was active, or through a
+                            different method.
+                        </p>
                     </div>
-                <?php elseif (!$selected_user->idnumber): ?>
+                <?php elseif (!$selecteduser->idnumber) : ?>
                     <div class="status-indicator no-enrolment">
                         <strong>Cannot post completion</strong>
-                        <p class="mb-0 mt-1">User has no GUID set. This is required for CData integration.</p>
+                        <p class="mb-0 mt-1">
+                            User has no GUID set. This is required
+                            for CData integration.
+                        </p>
                     </div>
-                <?php elseif ($cdata_status && !$cdata_status['success']): ?>
+                <?php elseif ($cdatastatus && !$cdatastatus['success']) : ?>
                     <div class="status-indicator no-enrolment">
                         <strong>CData API unavailable</strong>
-                        <p class="mb-2 mt-1">Cannot verify completion status: <?php echo htmlspecialchars($cdata_status['error']); ?></p>
-                        <p class="mb-2"><small>You can still attempt to post, but the API may reject the request.</small></p>
-                        <form method="post" action="<?php echo $PAGE->url; ?>">
-                            <input type="hidden" name="course_id" value="<?php echo $selected_course->id; ?>">
-                            <input type="hidden" name="user_id" value="<?php echo $selected_user->id; ?>">
-                            <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
-                            <button type="submit" name="post_completion" class="btn btn-warning"
-                                    onclick="return confirm('The CData API is currently unavailable. The POST may fail. Continue anyway?');">
+                        <p class="mb-2 mt-1">
+                            Cannot verify completion status:
+                            <?php
+                            echo htmlspecialchars(
+                                $cdatastatus['error']
+                            );
+                            ?>
+                        </p>
+                        <p class="mb-2"><small>
+                            You can still attempt to post, but the
+                            API may reject the request.
+                        </small></p>
+                        <form method="post"
+                              action="<?php echo $PAGE->url; ?>">
+                            <input type="hidden" name="course_id"
+                                   value="<?php
+                                   echo $selectedcourse->id; ?>">
+                            <input type="hidden" name="user_id"
+                                   value="<?php
+                                   echo $selecteduser->id; ?>">
+                            <input type="hidden" name="sesskey"
+                                   value="<?php echo sesskey(); ?>">
+                            <button type="submit"
+                                    name="post_completion"
+                                    class="btn btn-warning"
+                                    onclick="return confirm(
+                                        'The CData API is currently unavailable. The POST may fail. Continue anyway?'
+                                    );">
                                 Attempt to Post Completion
                             </button>
                         </form>
                     </div>
-                <?php elseif ($cdata_status && $cdata_status['data']): ?>
+                <?php elseif ($cdatastatus && $cdatastatus['data']) : ?>
                     <div class="status-indicator completed">
-                        <strong>Already completed in CData</strong>
-                        <p class="mb-0 mt-1">CData shows this user already completed this course<?php
-                            if (!empty($cdata_status['data']['COURSE_COMPLETE_DATE'])) {
-                                echo ' on ' . htmlspecialchars($cdata_status['data']['COURSE_COMPLETE_DATE']);
+                        <strong>
+                            Already completed in CData
+                        </strong>
+                        <p class="mb-0 mt-1">
+                            CData shows this user already completed
+                            this course<?php
+                            $completedate = $cdatastatus['data']['COURSE_COMPLETE_DATE'] ?? '';
+                            if (!empty($completedate)) {
+                                echo ' on '
+                                    . htmlspecialchars($completedate);
                             }
-                        ?>.</p>
-                        <form method="post" action="<?php echo $PAGE->url; ?>" class="mt-2">
-                            <input type="hidden" name="course_id" value="<?php echo $selected_course->id; ?>">
-                            <input type="hidden" name="user_id" value="<?php echo $selected_user->id; ?>">
-                            <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
-                            <button type="submit" name="post_completion" class="btn btn-warning btn-sm"
-                                    onclick="return confirm('CData already shows this as completed. Are you sure you want to send it again?');">
+                            ?>.
+                        </p>
+                        <form method="post"
+                              action="<?php echo $PAGE->url; ?>"
+                              class="mt-2">
+                            <input type="hidden" name="course_id"
+                                   value="<?php
+                                   echo $selectedcourse->id; ?>">
+                            <input type="hidden" name="user_id"
+                                   value="<?php
+                                   echo $selecteduser->id; ?>">
+                            <input type="hidden" name="sesskey"
+                                   value="<?php echo sesskey(); ?>">
+                            <button type="submit"
+                                    name="post_completion"
+                                    class="btn btn-warning btn-sm"
+                                    onclick="return confirm(
+                                        'CData already shows this as completed. Are you sure you want to send it again?'
+                                    );">
                                 Re-send Completion
                             </button>
                         </form>
                     </div>
-                <?php elseif ($completion_log && $completion_log->status === 'Success'): ?>
+                <?php elseif ($completionlog && $completionlog->status === 'Success') : ?>
                     <div class="status-indicator completed">
-                        <strong>Previously sent (not in CData)</strong>
-                        <p class="mb-0 mt-1">Local logs show this was posted on <?php echo date('Y-m-d H:i', $completion_log->timestamp); ?>, but CData doesn't have a completion record. It may not have been processed.</p>
-                        <form method="post" action="<?php echo $PAGE->url; ?>" class="mt-2">
-                            <input type="hidden" name="course_id" value="<?php echo $selected_course->id; ?>">
-                            <input type="hidden" name="user_id" value="<?php echo $selected_user->id; ?>">
-                            <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
-                            <button type="submit" name="post_completion" class="btn btn-warning btn-sm"
-                                    onclick="return confirm('Re-send this completion to CData?');">
+                        <strong>
+                            Previously sent (not in CData)
+                        </strong>
+                        <p class="mb-0 mt-1">
+                            Local logs show this was posted on
+                            <?php
+                            echo date(
+                                'Y-m-d H:i',
+                                $completionlog->timestamp
+                            );
+                            ?>, but CData doesn't have a completion
+                            record. It may not have been processed.
+                        </p>
+                        <form method="post"
+                              action="<?php echo $PAGE->url; ?>"
+                              class="mt-2">
+                            <input type="hidden" name="course_id"
+                                   value="<?php
+                                   echo $selectedcourse->id; ?>">
+                            <input type="hidden" name="user_id"
+                                   value="<?php
+                                   echo $selecteduser->id; ?>">
+                            <input type="hidden" name="sesskey"
+                                   value="<?php echo sesskey(); ?>">
+                            <button type="submit"
+                                    name="post_completion"
+                                    class="btn btn-warning btn-sm"
+                                    onclick="return confirm(
+                                        'Re-send this completion to CData?'
+                                    );">
                                 Re-send Completion
                             </button>
                         </form>
                     </div>
-                <?php else: ?>
+                <?php else : ?>
                     <div class="status-indicator not-completed">
                         <strong>Ready to post completion</strong>
-                        <?php if (!$moodle_completion['completed']): ?>
-                        <p class="mb-2 mt-1 text-warning"><strong>Warning:</strong> User has not completed this course in Moodle. Posting will mark them as complete in ELM.</p>
-                        <?php else: ?>
-                        <p class="mb-2 mt-1">User completed in Moodle but completion has not been sent to CData.</p>
+                        <?php if (!$moodlecompletion['completed']) : ?>
+                        <p class="mb-2 mt-1 text-warning">
+                            <strong>Warning:</strong>
+                            User has not completed this course in
+                            Moodle. Posting will mark them as
+                            complete in ELM.
+                        </p>
+                        <?php else : ?>
+                        <p class="mb-2 mt-1">
+                            User completed in Moodle but completion
+                            has not been sent to CData.
+                        </p>
                         <?php endif; ?>
 
-                        <form method="post" action="<?php echo $PAGE->url; ?>">
-                            <input type="hidden" name="course_id" value="<?php echo $selected_course->id; ?>">
-                            <input type="hidden" name="user_id" value="<?php echo $selected_user->id; ?>">
-                            <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
-                            <button type="submit" name="post_completion" class="btn btn-success">
+                        <form method="post"
+                              action="<?php echo $PAGE->url; ?>">
+                            <input type="hidden" name="course_id"
+                                   value="<?php
+                                   echo $selectedcourse->id; ?>">
+                            <input type="hidden" name="user_id"
+                                   value="<?php
+                                   echo $selecteduser->id; ?>">
+                            <input type="hidden" name="sesskey"
+                                   value="<?php echo sesskey(); ?>">
+                            <button type="submit"
+                                    name="post_completion"
+                                    class="btn btn-success">
                                 Post Completion to CData
                             </button>
                         </form>
@@ -916,10 +1315,28 @@ echo $OUTPUT->header();
             </div>
 
             <div class="mt-3">
-                <a href="/local/psaelmsync/dashboard.php?search=<?php echo urlencode($selected_user->idnumber); ?>"
-                   class="btn btn-sm btn-outline-secondary" target="_blank" >View all sync logs for this user<span class="sr-only"> (opens in new window)</span></a>
-                <a href="/report/completion/index.php?course=<?php echo $selected_course->id; ?>"
-                   class="btn btn-sm btn-outline-secondary" target="_blank" >Course completion report<span class="sr-only"> (opens in new window)</span></a>
+                <?php
+                $logsurl = '/local/psaelmsync/dashboard.php?search='
+                    . urlencode($selecteduser->idnumber);
+                $reporturl = '/report/completion/index.php?course='
+                    . $selectedcourse->id;
+                ?>
+                <a href="<?php echo $logsurl; ?>"
+                   class="btn btn-sm btn-outline-secondary"
+                   target="_blank">
+                    View all sync logs for this user
+                    <span class="sr-only">
+                        (opens in new window)
+                    </span>
+                </a>
+                <a href="<?php echo $reporturl; ?>"
+                   class="btn btn-sm btn-outline-secondary"
+                   target="_blank">
+                    Course completion report
+                    <span class="sr-only">
+                        (opens in new window)
+                    </span>
+                </a>
             </div>
         <?php endif; ?>
     </div>

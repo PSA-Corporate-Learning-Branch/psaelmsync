@@ -1,4 +1,27 @@
 <?php
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * Core sync logic for the PSALS Sync plugin.
+ *
+ * @package    local_psaelmsync
+ * @copyright  2025 BC Public Service
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+
 defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
@@ -6,27 +29,33 @@ require_once($CFG->libdir . '/filelib.php');
 
 /**
  * Check if a given ELM course ID is on the ignore list.
- * @param int|string $elm_course_id The COURSE_IDENTIFIER value to check.
+ *
+ * @param int|string $elmcourseid The COURSE_IDENTIFIER value to check.
  * @return bool True if the course should be ignored.
  */
-function local_psaelmsync_is_ignored_course($elm_course_id) {
+function local_psaelmsync_is_ignored_course($elmcourseid) {
     $ignorelist = get_config('local_psaelmsync', 'ignorecourseids');
     if (empty($ignorelist)) {
         return false;
     }
-    $ignored_ids = array_map('trim', explode(',', $ignorelist));
-    return in_array((string)(int)$elm_course_id, $ignored_ids, true);
+    $ignoredids = array_map('trim', explode(',', $ignorelist));
+    return in_array((string)(int)$elmcourseid, $ignoredids, true);
 }
 
 /**
  * The primary function to sync enrolments from the ELM system via the CData API.
+ *
  * This function is designed to be run as a scheduled task and will:
  * - Fetch enrolment records from the CData API with a date filter.
  * - Process each record to enrol or suspend users in Moodle courses.
  * - Log the results of each record processing in a custom log table.
  * - Send email notifications for any errors encountered during processing.
- * - Log the overall run details including counts of enrolments, suspensions, errors, and skipped records.
- * - Check for inactivity and send notifications if no enrolments or suspensions have been processed within a specified timeframe.
+ * - Log the overall run details including counts of enrolments, suspensions,
+ *   errors, and skipped records.
+ * - Check for inactivity and send notifications if no enrolments or suspensions
+ *   have been processed within a specified timeframe.
+ *
+ * @return void
  */
 function local_psaelmsync_sync() {
 
@@ -44,35 +73,38 @@ function local_psaelmsync_sync() {
         mtrace('PSA Enrol Sync: API URL or Token not set.');
         return;
     }
-    // Setup API Url with a date filter that only pulls in the records from N minutes ago
+    // Setup API URL with a date filter that only pulls in records from N minutes ago.
     $mins = '-' . $datefilter . ' minutes';
-    $time_minus_mins = date('Y-m-d H:i:s', strtotime($mins));
-    $encoded_time = urlencode($time_minus_mins);
-    $apiurlfiltered = $apiurl . '?%24orderby=COURSE_STATE_DATE,date_created+asc';
-    $apiurlfiltered .= '&%24filter=date_created+gt+%27' . $encoded_time .'%27+and+USER_STATE+eq+%27ACTIVE%27';
+    $timeminusmins = date('Y-m-d H:i:s', strtotime($mins));
+    $encodedtime = urlencode($timeminusmins);
+    $apiurlfiltered = $apiurl
+        . '?%24orderby=COURSE_STATE_DATE,date_created+asc';
+    $apiurlfiltered .= '&%24filter=date_created+gt+%27'
+        . $encodedtime
+        . '%27+and+USER_STATE+eq+%27ACTIVE%27';
 
     // Make API call.
-    $options = array(
+    $options = [
         'RETURNTRANSFER' => 1,
         'HEADER' => 0,
         'FAILONERROR' => 1,
-    );
-    $header = array('x-cdata-authtoken: ' . $apitoken);
+    ];
+    $header = ['x-cdata-authtoken: ' . $apitoken];
     $curl = new curl();
     $curl->setHeader($header);
     $response = $curl->get($apiurlfiltered, $options);
 
     if ($curl->get_errno()) {
-        mtrace('PSA Enrol Sync: API request failed: ' . $apiurlfiltered);
-        // #TODO log these?
+        mtrace('PSA Enrol Sync: API request failed: '
+            . $apiurlfiltered);
         return;
     }
 
     $data = json_decode($response, true);
 
     if (empty($data)) {
-        mtrace('PSA Enrol Sync: No data received from API: ' . print_r($response, true));
-        // #TODO log these?
+        mtrace('PSA Enrol Sync: No data received from API: '
+            . var_export($response, true));
         return;
     }
 
@@ -83,200 +115,221 @@ function local_psaelmsync_sync() {
     $suspendcount = 0;
     $errorcount = 0;
     $skippedcount = 0;
-    
-    // This is the primary loop where we start to look at each record
+
+    // This is the primary loop where we start to look at each record.
     foreach ($data['value'] as $record) {
         $recordcount++;
-        // Process each record. Returns the enrolment_type for logging
+        // Process each record and return the enrolment type for logging.
         $action = process_enrolment_record($record);
         $typecounts[] = $action;
     }
 
     // Loop through to pull out how many enrols and drops etc. respectively.
-    foreach($typecounts as $t) {
-        if($t == 'Enrol') $enrolcount++;
-        if($t == 'Suspend') $suspendcount++;
-        if($t == 'Error') $errorcount++;
-        if($t == 'Skipped') $skippedcount++;
+    foreach ($typecounts as $t) {
+        if ($t == 'Enrol') {
+            $enrolcount++;
+        }
+        if ($t == 'Suspend') {
+            $suspendcount++;
+        }
+        if ($t == 'Error') {
+            $errorcount++;
+        }
+        if ($t == 'Skipped') {
+            $skippedcount++;
+        }
     }
     // Log the end of the run time.
     $runlogendtime = floor(microtime(true) * 1000);
     $log = [
-            'apiurl' => $apiurlfiltered, 
-            'starttime' => $runlogstarttime, 
-            'endtime' => $runlogendtime, 
-            'recordcount' => $recordcount,
-            'enrolcount' => $enrolcount,
-            'suspendcount' => $suspendcount,
-            'errorcount' => $errorcount,
-            'skippedcount' => $skippedcount
-        ];
+        'apiurl' => $apiurlfiltered,
+        'starttime' => $runlogstarttime,
+        'endtime' => $runlogendtime,
+        'recordcount' => $recordcount,
+        'enrolcount' => $enrolcount,
+        'suspendcount' => $suspendcount,
+        'errorcount' => $errorcount,
+        'skippedcount' => $skippedcount,
+    ];
     $DB->insert_record('local_psaelmsync_runs', (object)$log);
 
-    // Check for the time since the last enrolment or suspend. 
-    // If it's been more than N hours then send an email to the 
+    // Check for the time since the last enrolment or suspend.
+    // If it has been more than N hours then send an email to the
     // admin list notifying them that the bridge might be blocked
     // on the ELM side.
     check_last_enrolment_or_suspend($notificationhours);
-    
 }
 
+/**
+ * Process a single enrolment record from the CData API response.
+ *
+ * Deduplicates by SHA256 hash, looks up or creates the user, enrols or
+ * suspends in the matching Moodle course, and logs the outcome.
+ *
+ * @param array $record A single enrolment record from the CData API.
+ * @return string The action taken: Enrol, Suspend, Error, or Skipped.
+ */
 function process_enrolment_record($record) {
-    
+
     global $DB;
-    /**
-     * Sample record 
-     *{
-     *     "COURSE_IDENTIFIER": 40972,
-     *     "COURSE_STATE": "Enrol",
-     *     "COURSE_STATE_DATE": "2025-05-12T10:50:18.000-07:00",
-     *     "GUID": "5F421FC1A510420B9A19A46D24069FFD",
-     *     "COURSE_SHORTNAME": "ITEM-2625-1",
-     *     "date_created": "2025-05-12T11:00:20.000-07:00",
-     *     "date_deleted": null,
-     *     "date_updated": null,
-     *     "EMAIL": "allan.haggett@gov.bc.ca",
-     *     "FIRST_NAME": "Allan",
-     *     "LAST_NAME": "Haggett",
-     *     "USER_EFFECTIVE_DATE": "2017-02-07",
-     *     "USER_STATE": "ACTIVE",
-     *     "record_enrol_id": 39861,
-     *     "OPRID": "AHAGGETT",
-     *     "PERSON_ID": 115000,
-     *     "ENROLMENT_ID": 2627101,
-     *     "ACTIVITY_ID": 21177,
-     *     "COURSE_LONG_NAME": "B.C. Provincial Government Essentials",
-     *     "COURSE_START_DATE": null
-     * },
-     */
-    
-    // CData doesn't currently supply a unique record ID yet, so we just make one up.
-    // In milliseconds.
-    $record_id = floor(microtime(true) * 1000); // (int) $record['record_id'];
-    // In current state the plan is to use the USER_STATE field to hold the 
-    // enrolment ID. At some point hopefully we'll get away from the spaghetti 
-    // that is our field mapping. In the meantime, we're just faking an ID.
-    $enrolment_id = (int) $record['ENROLMENT_ID'];
-    // The rest map to CData fields
-    $record_date_created = $record['date_created'];
-    $elm_course_id = (int) $record['COURSE_IDENTIFIER'];
+
+    // CData does not currently supply a unique record ID yet, so we generate one.
+    // Value is in milliseconds.
+    $recordid = floor(microtime(true) * 1000);
+    // In current state the plan is to use the USER_STATE field to hold the
+    // enrolment ID. At some point hopefully we will get away from the spaghetti
+    // that is our field mapping. In the meantime, we are just faking an ID.
+    $enrolmentid = (int) $record['ENROLMENT_ID'];
+    // The rest map to CData fields.
+    $recorddatecreated = $record['date_created'];
+    $elmcourseid = (int) $record['COURSE_IDENTIFIER'];
 
     // Check the ignore list before doing anything else with this record.
-    if (local_psaelmsync_is_ignored_course($elm_course_id)) {
+    if (local_psaelmsync_is_ignored_course($elmcourseid)) {
         return 'Skipped';
     }
 
-    $enrolment_status = $record['COURSE_STATE'];
-    $class_code = $record['COURSE_SHORTNAME'];
-    $first_name = $record['FIRST_NAME'];
-    $last_name = $record['LAST_NAME'];
-    $user_email = $record['EMAIL'];
-    $user_guid = $record['GUID'];
-    $user_oprid = $record['OPRID'];
-    $user_activity_id = $record['ACTIVITY_ID'];
-    $user_person_id = $record['PERSON_ID'];
-    $course_long_name = $record['COURSE_LONG_NAME'];
+    $enrolmentstatus = $record['COURSE_STATE'];
+    $classcode = $record['COURSE_SHORTNAME'];
+    $firstname = $record['FIRST_NAME'];
+    $lastname = $record['LAST_NAME'];
+    $useremail = $record['EMAIL'];
+    $userguid = $record['GUID'];
+    $useroprid = $record['OPRID'];
+    $useractivityid = $record['ACTIVITY_ID'];
+    $userpersonid = $record['PERSON_ID'];
+    $courselongname = $record['COURSE_LONG_NAME'];
 
-    // We need to create a unique ID here by hashing the relevent info.
-    // When we have access to them, we'll want to include $enrolment_id and 
-    // record_id in this hash for extra-good unqiueness but right now we're 
-    // dynamically generating them (should we just not maybe?) which 
-    // would break this(?), so just leaving it out for the time being. I think the 
-    // data included does a good enough job for now. Two identical records coming 
-    // through is enough of an edge case and wouldn't really have an adverse
-    // effect anyhow.
-    $hash_content = $record_date_created . $elm_course_id . $class_code . $enrolment_status . $user_guid . $user_email;
-    $hash = hash('sha256', $hash_content);
-    // This is expensive part of doing it this way where we touch the database  
-    // for every single record in the feed, but it's probably the least expensive 
-    // but verifyable method that we can come up with; certainly less expensive
-    // than updating each record with a callback.
-    $hashcheck = $DB->get_record('local_psaelmsync_logs', ['sha256hash' => $hash], '*', IGNORE_MULTIPLE);
+    // We need to create a unique ID here by hashing the relevant info.
+    // When we have access to them, we will want to include enrolment ID and
+    // record ID in this hash for extra uniqueness but right now we are
+    // dynamically generating them which would break this, so just leaving
+    // it out for the time being. The data included does a good enough job
+    // for now. Two identical records coming through is enough of an edge
+    // case and would not really have an adverse effect anyhow.
+    $hashcontent = $recorddatecreated . $elmcourseid
+        . $classcode . $enrolmentstatus . $userguid . $useremail;
+    $hash = hash('sha256', $hashcontent);
+    // This is the expensive part of doing it this way where we touch the
+    // database for every single record in the feed, but it is probably the
+    // least expensive but verifiable method that we can come up with;
+    // certainly less expensive than updating each record with a callback.
+    $hashcheck = $DB->get_record(
+        'local_psaelmsync_logs',
+        ['sha256hash' => $hash],
+        '*',
+        IGNORE_MULTIPLE
+    );
 
-    // Does the hash exist in the table? If so we want to skip this record as 
-    // we've already processed it, but still counting it as we go.
+    // Does the hash exist in the table? If so we want to skip this record
+    // as we have already processed it, but still counting it as we go.
     if ($hashcheck) {
         $s = 'Skipped';
         return $s;
     }
 
-    // If there's no course with this IDNumber (note: not the Moodle course ID 
-    // but ELM's course ID), skip record. We want to log that this is happening 
-    // and send an email to the admin list.
-    if (!$course = $DB->get_record('course', array('idnumber' => $elm_course_id))) {
-        // We haven't done a user lookup yet so 
-        $user_id = 0;
-        log_record($record_id, 
-                    $hash, 
-                    $record_date_created, 
-                    0, // we don't have it to provide.
-                    $elm_course_id, 
-                    $class_code, 
-                    $enrolment_id, 
-                    $user_id, 
-                    $first_name, 
-                    $last_name, 
-                    $user_email, 
-                    $user_guid,
-                    $user_oprid,
-                    $user_person_id,
-                    $user_activity_id,
-                    'Course not found',
-                    'Error');
-        // Send the email notification
-        send_failure_notification('coursefail', $first_name, $last_name, $course_long_name, $user_email, $user_person_id, $user_oprid, $user_activity_id, $class_code, 'Course not found');
+    // If there is no course with this IDNumber (note: not the Moodle course
+    // ID but ELM's course ID), skip record. We want to log that this is
+    // happening and send an email to the admin list.
+    if (!$course = $DB->get_record('course', ['idnumber' => $elmcourseid])) {
+        // We have not done a user lookup yet.
+        $userid = 0;
+        log_record(
+            $recordid,
+            $hash,
+            $recorddatecreated,
+            0,
+            $elmcourseid,
+            $classcode,
+            $enrolmentid,
+            $userid,
+            $firstname,
+            $lastname,
+            $useremail,
+            $userguid,
+            $useroprid,
+            $userpersonid,
+            $useractivityid,
+            'Course not found',
+            'Error'
+        );
+        // Send the email notification.
+        send_failure_notification(
+            'coursefail',
+            $firstname,
+            $lastname,
+            $courselongname,
+            $useremail,
+            $userpersonid,
+            $useroprid,
+            $useractivityid,
+            $classcode,
+            'Course not found'
+        );
         $e = 'Error';
         return $e;
     }
 
-    // Check if user exists by GUID     .
-    if ($user = $DB->get_record('user', array('idnumber' => $user_guid),'*')) {
-
-        $user_id = $user->id;
-
+    // Check if user exists by GUID.
+    if ($user = $DB->get_record('user', ['idnumber' => $userguid], '*')) {
+        $userid = $user->id;
     } else {
         // Attempt to create a new user, handle any exceptions gracefully.
         try {
-
-            $user = create_user($first_name, $last_name, $user_email, $user_guid);
-            $user_id = $user->id;
-
+            $user = create_user(
+                $firstname,
+                $lastname,
+                $useremail,
+                $userguid
+            );
+            $userid = $user->id;
         } catch (Exception $e) {
+            $errormessage = $e->getMessage();
 
-            $error_message = $e->getMessage();
-
-            // Do an additional lookup at this point to see if the provided email 
-            // exists and if it does send that account info along as well as the issue
-            // is likely a GUID change.
-            if ($useremail = $DB->get_record('user', array('email' => $user_email),'*')) {
-                
-                $error_message = 'User email is associated with another profile.';
-                $error_message .= 'https://learning.gww.gov.bc.ca/user/view.php?id=' . $useremail->id . '';
-                $error_message .= 'This is likely a GUID change issue.';
-
+            // Do an additional lookup at this point to see if the provided
+            // email exists and if it does send that account info along as
+            // well as the issue is likely a GUID change.
+            if ($useremaillookup = $DB->get_record('user', ['email' => $useremail], '*')) {
+                $errormessage = 'User email is associated with another profile.';
+                $errormessage .= 'https://learning.gww.gov.bc.ca/user/view.php?id='
+                    . $useremaillookup->id . '';
+                $errormessage .= 'This is likely a GUID change issue.';
             }
 
-            // Log the error
-            log_record($record_id, 
-                        $hash, 
-                        $record_date_created, 
-                        $course->id, 
-                        $elm_course_id, 
-                        $class_code, 
-                        $enrolment_id, 
-                        0, // No user ID since creation failed
-                        $first_name, 
-                        $last_name, 
-                        $user_email, 
-                        $user_guid,
-                        $user_oprid,
-                        $user_person_id,
-                        $user_activity_id, 
-                        'User create failure',
-                        'Error');
-            
-            // Send an email notification
-            send_failure_notification('userfail', $first_name, $last_name, $course_long_name, $user_email, $user_person_id, $user_oprid, $user_activity_id, $class_code, $error_message);
+            // Log the error.
+            log_record(
+                $recordid,
+                $hash,
+                $recorddatecreated,
+                $course->id,
+                $elmcourseid,
+                $classcode,
+                $enrolmentid,
+                0,
+                $firstname,
+                $lastname,
+                $useremail,
+                $userguid,
+                $useroprid,
+                $userpersonid,
+                $useractivityid,
+                'User create failure',
+                'Error'
+            );
+
+            // Send an email notification.
+            send_failure_notification(
+                'userfail',
+                $firstname,
+                $lastname,
+                $courselongname,
+                $useremail,
+                $userpersonid,
+                $useroprid,
+                $useractivityid,
+                $classcode,
+                $errormessage
+            );
 
             // Return to skip further processing of this record.
             $e = 'Error';
@@ -286,156 +339,186 @@ function process_enrolment_record($record) {
 
     // Even if we find a user by the provided GUID, we also need to check
     // to see if the email address associated with the account is consistent
-    // with this CData record. If it isn't then we notify admins and error out.
-    if (strtolower($user->email) != strtolower($user_email)) {
-
-        // Check if another user already has the new email address
-        $useremailcheck = $DB->get_record('user', ['email' => $user_email]);
+    // with this CData record. If it is not then we notify admins and error out.
+    if (strtolower($user->email) != strtolower($useremail)) {
+        // Check if another user already has the new email address.
+        $useremailcheck = $DB->get_record('user', ['email' => $useremail]);
 
         // We base usernames on email addresses, so we want to be double-sure
-        // and also check to ensure that the username doesn't exist. 
-        // These are almost certainly going to be the same, but weird things happen 
-        // around here so we just make sure.
-        // Generate the new username based on the new email address for comparison
-        $new_username = strtolower($user_email);
-        // If we need to optimize this process at any point, this lookup might 
-        // be considered a bit redundant.
-        $username_exists = $DB->record_exists('user', ['username' => $new_username]);
+        // and also check to ensure that the username does not exist.
+        // These are almost certainly going to be the same, but weird things
+        // happen around here so we just make sure.
+        // Generate the new username based on the new email address.
+        $newusername = strtolower($useremail);
+        // If we need to optimize this process at any point, this lookup
+        // might be considered a bit redundant.
+        $usernameexists = $DB->record_exists(
+            'user',
+            ['username' => $newusername]
+        );
 
-        // We're going to send an email either way, but the message will vary.
-        $message = 'We\'ve come across a learner with an account with the given GUID, but ';
-        $message .= 'when we lookup the provided email address, it doesn\'t match and ';
+        // We are going to send an email either way, but the message will vary.
+        $message = 'We\'ve come across a learner with an account with the '
+            . 'given GUID, but when we lookup the provided email address, '
+            . 'it doesn\'t match and ';
 
-        if (!$useremailcheck && !$username_exists) {
-
-            $message .= 'there is no other account by that username/email address.<br>';
-
-        } else { // There IS another account with this email or username
-            
-            // Should we do further checks here to see if the other account 
-            // has ever been logged into? Is it enrolled in anything else?
-            // If it's a blank account maybe make the decision to delete it.
-            // 
+        if (!$useremailcheck && !$usernameexists) {
+            $message .= 'there is no other account by that '
+                . 'username/email address.<br>';
+        } else {
+            // There IS another account with this email or username.
             if ($useremailcheck) {
-                $message .= 'there is <a href="/user/view.php?id=' . $useremailcheck->id . '">';
-                $message .= 'another account</a> with this email address.<br>';
+                $message .= 'there is <a href="/user/view.php?id='
+                    . $useremailcheck->id . '">';
+                $message .= 'another account</a> with this '
+                    . 'email address.<br>';
             }
-            // As we base our usernames on email address, this lookup will almost
-            // always return the exact same user. If the username exists AND it's 
-            // not the same account then add addtional context.
-            if ($username_exists && $useremailcheck->id != $username_exists->id) {
-                $message .= 'As well, the username derived from the new email ';
-                $message .= '<a href="/user/view.php?id=' . $username_exists->id . '">is already in use</a>.<br>';
+            // As we base our usernames on email address, this lookup will
+            // almost always return the exact same user. If the username
+            // exists AND it is not the same account then add additional
+            // context.
+            if (
+                $usernameexists
+                    && $useremailcheck->id != $usernameexists->id
+            ) {
+                $message .= 'As well, the username derived from the new '
+                    . 'email <a href="/user/view.php?id='
+                    . $usernameexists->id
+                    . '">is already in use</a>.<br>';
             }
         }
         $message .= '<hr>';
-        $message .= 'CData name/GUID ' . $first_name . ' ' . $last_name . ': ' . $user_guid . '<br>';
+        $message .= 'CData name/GUID ' . $firstname . ' '
+            . $lastname . ': ' . $userguid . '<br>';
         $message .= 'Existing email: ' . $user->email . '<br>';
-        $message .= 'Email from CData record: ' . $user_email . '<br><br>';
+        $message .= 'Email from CData record: '
+            . $useremail . '<br><br>';
         $message .= 'Please investigate further.';
 
-        // Given that there's a conflict here that needs to be resolved by
-        // a human, we error out at this point logging it and sending the notification.
-        // Log the error
-        log_record($record_id, 
-                    $hash, 
-                    $record_date_created, 
-                    $course->id, 
-                    $elm_course_id, 
-                    $class_code, 
-                    $enrolment_id, 
-                    $user->id,
-                    $first_name, 
-                    $last_name, 
-                    $user_email, 
-                    $user_guid,
-                    $user_oprid,
-                    $user_person_id,
-                    $user_activity_id, 
-                    'Email Mistatch',
-                    'Error');
-        
-        // Send the email notification
-        send_failure_notification('emailmismatch', $first_name, $last_name, $course_long_name, $user_email, $user_person_id, $user_oprid, $user_activity_id, $class_code, $message);
+        // Given that there is a conflict here that needs to be resolved by
+        // a human, we error out at this point logging it and sending the
+        // notification.
+        log_record(
+            $recordid,
+            $hash,
+            $recorddatecreated,
+            $course->id,
+            $elmcourseid,
+            $classcode,
+            $enrolmentid,
+            $user->id,
+            $firstname,
+            $lastname,
+            $useremail,
+            $userguid,
+            $useroprid,
+            $userpersonid,
+            $useractivityid,
+            'Email Mistatch',
+            'Error'
+        );
+
+        // Send the email notification.
+        send_failure_notification(
+            'emailmismatch',
+            $firstname,
+            $lastname,
+            $courselongname,
+            $useremail,
+            $userpersonid,
+            $useroprid,
+            $useractivityid,
+            $classcode,
+            $message
+        );
 
         $e = 'Error';
         return $e;
     }
 
-    if ($enrolment_status == 'Enrol') {
+    if ($enrolmentstatus == 'Enrol') {
         // Enrol the user in the course.
         $enrol = enrol_get_plugin('manual');
         if ($enrol) {
-            $instance = $DB->get_record('enrol', array('courseid' => $course->id, 'enrol' => 'manual'), '*', MUST_EXIST);
-            $enrol->enrol_user($instance, $user_id, $instance->roleid, 0, 0, ENROL_USER_ACTIVE);
+            $instance = $DB->get_record(
+                'enrol',
+                ['courseid' => $course->id, 'enrol' => 'manual'],
+                '*',
+                MUST_EXIST
+            );
+            $enrol->enrol_user(
+                $instance,
+                $userid,
+                $instance->roleid,
+                0,
+                0,
+                ENROL_USER_ACTIVE
+            );
         }
 
         send_welcome_email($user, $course);
 
         $action = 'Enrol';
-        // #TODO If this is a record where there was an email mismatch and the 
-        // account was updated, we should perhaps not log it as a normal
-        // 'enrol'? NOTE that this has repercussions for counts we do for 
-        // enrol, drop, error, skip and to add a new type of action requires
-        // updating the DB with a corresponding field in _runs table.
-        // if($emailmismatch > 0) {
-        //     $action = 'Enrol Update Email';
-        // }
-        log_record($record_id, 
-                    $hash, 
-                    $record_date_created, 
-                    $course->id, 
-                    $elm_course_id, 
-                    $class_code, 
-                    $enrolment_id, 
-                    $user_id, 
-                    $first_name, 
-                    $last_name, 
-                    $user_email, 
-                    $user_guid,
-                    $user_oprid,
-                    $user_person_id,
-                    $user_activity_id,
-                    $action, 
-                    'Success');
-
-    } elseif ($enrolment_status == 'Suspend') {
+        log_record(
+            $recordid,
+            $hash,
+            $recorddatecreated,
+            $course->id,
+            $elmcourseid,
+            $classcode,
+            $enrolmentid,
+            $userid,
+            $firstname,
+            $lastname,
+            $useremail,
+            $userguid,
+            $useroprid,
+            $userpersonid,
+            $useractivityid,
+            $action,
+            'Success'
+        );
+    } else if ($enrolmentstatus == 'Suspend') {
         // Suspend the user in the course.
-        suspend_user_in_course($user_id, $course->id, $elm_course_id);
+        suspend_user_in_course($userid, $course->id, $elmcourseid);
 
-        // #TODO send a drop email?? 
-        
         $action = 'Suspend';
-        // See above comment in enrol about this.
-        // if($emailmismatch > 0) {
-        //     $action = 'Suspend Update Email';
-        // }
-        log_record($record_id, 
-                    $hash, 
-                    $record_date_created, 
-                    $course->id,
-                    $elm_course_id, 
-                    $class_code, 
-                    $enrolment_id, 
-                    $user_id, 
-                    $first_name, 
-                    $last_name, 
-                    $user_email, 
-                    $user_guid,
-                    $user_oprid,
-                    $user_person_id,
-                    $user_activity_id, 
-                    $action, 
-                    'Success');
+        log_record(
+            $recordid,
+            $hash,
+            $recorddatecreated,
+            $course->id,
+            $elmcourseid,
+            $classcode,
+            $enrolmentid,
+            $userid,
+            $firstname,
+            $lastname,
+            $useremail,
+            $userguid,
+            $useroprid,
+            $userpersonid,
+            $useractivityid,
+            $action,
+            'Success'
+        );
     }
-    
-    // We return the enrolment_status so that we can count enrols and suspends
-    // when we log the run.
-    return $enrolment_status;
 
+    // We return the enrolment status so that we can count enrols and
+    // suspends when we log the run.
+    return $enrolmentstatus;
 }
 
-function create_user($first_name, $last_name, $email, $guid) {
+/**
+ * Create a new Moodle user account with OAuth2 authentication.
+ *
+ * @param string $firstname The user's first name.
+ * @param string $lastname The user's last name.
+ * @param string $email The user's email address.
+ * @param string $guid The user's GUID from ELM.
+ * @return stdClass The created user object with its new ID.
+ */
+function create_user($firstname, $lastname, $email, $guid) {
     global $DB;
 
     $user = new stdClass();
@@ -444,12 +527,13 @@ function create_user($first_name, $last_name, $email, $guid) {
     $user->username = $uname;
     $user->mnethostid = 1;
     $user->password = hash_internal_user_password(random_string(8));
-    $user->firstname = $first_name;
-    $user->lastname = $last_name;
+    $user->firstname = $firstname;
+    $user->lastname = $lastname;
     $user->email = $email;
     $user->idnumber = $guid;
     $user->confirmed = 1;
-    $user->emailformat = 1; // 1 for HTML, 0 for plain text
+    // Use HTML email format.
+    $user->emailformat = 1;
     $user->timecreated = time();
     $user->timemodified = time();
 
@@ -458,79 +542,161 @@ function create_user($first_name, $last_name, $email, $guid) {
     return $user;
 }
 
-function suspend_user_in_course($user_id, $course_id, $elm_course_id) {
+/**
+ * Suspend a user's enrolment in a specific course.
+ *
+ * @param int $userid The Moodle user ID.
+ * @param int $courseid The Moodle course ID.
+ * @param int $elmcourseid The ELM course identifier.
+ * @return void
+ */
+function suspend_user_in_course($userid, $courseid, $elmcourseid) {
     global $DB;
 
-    $enrol_instance = $DB->get_record('enrol', array('courseid' => $course_id, 'enrol' => 'manual'), '*', IGNORE_MISSING);
-    if ($enrol_instance) {
-        $user_enrolment = $DB->get_record('user_enrolments', array('enrolid' => $enrol_instance->id, 'userid' => $user_id), '*', IGNORE_MISSING);
-        if ($user_enrolment) {
-            $user_enrolment->status = 1; // 1 indicates suspended status
-            $user_enrolment->timemodified = time();
-            $DB->update_record('user_enrolments', $user_enrolment);
+    $enrolinstance = $DB->get_record(
+        'enrol',
+        ['courseid' => $courseid, 'enrol' => 'manual'],
+        '*',
+        IGNORE_MISSING
+    );
+    if ($enrolinstance) {
+        $userenrolment = $DB->get_record(
+            'user_enrolments',
+            ['enrolid' => $enrolinstance->id, 'userid' => $userid],
+            '*',
+            IGNORE_MISSING
+        );
+        if ($userenrolment) {
+            // Status 1 indicates suspended.
+            $userenrolment->status = 1;
+            $userenrolment->timemodified = time();
+            $DB->update_record('user_enrolments', $userenrolment);
         }
     }
 }
 
-
+/**
+ * Send a welcome email to a user who has been enrolled in a course.
+ *
+ * @param stdClass $user The Moodle user object.
+ * @param stdClass $course The Moodle course object.
+ * @return void
+ */
 function send_welcome_email($user, $course) {
 
     $subject = "Welcome to {$course->fullname}";
 
-       // HTML version of the message
-    $html_message = <<<EMAIL
-       <p>Hi {$user->firstname},</p>
-       <p>You have been enrolled in <strong>{$course->fullname}</strong>.</p>
-       <p>Please click the following link, signing in using your IDIR credentials:</p>
-       <p><a href="https://learning.gww.gov.bc.ca/course/view.php?id={$course->id}" style="font-size: 20px;">Access this course on PSA Moodle</a></p>
-       <p>If you have any issues with the course materials, please <a href="http://www.gov.bc.ca/myhr/contact">submit an AskMyHR request</a> and select one of the subcategories under "Corporate Learning".</p>
-       <p>Regards,<br>PSA Moodle Team</p>
-   EMAIL;
+    // HTML version of the message.
+    $courseurl = 'https://learning.gww.gov.bc.ca/course/view.php?id='
+        . $course->id;
+    $contacturl = 'http://www.gov.bc.ca/myhr/contact';
+    $htmlmessage = '<p>Hi ' . $user->firstname . ',</p>'
+        . '<p>You have been enrolled in <strong>'
+        . $course->fullname . '</strong>.</p>'
+        . '<p>Please click the following link, signing in '
+        . 'using your IDIR credentials:</p>'
+        . '<p><a href="' . $courseurl
+        . '" style="font-size: 20px;">'
+        . 'Access this course on PSA Moodle</a></p>'
+        . '<p>If you have any issues with the course materials, '
+        . 'please <a href="' . $contacturl . '">'
+        . 'submit an AskMyHR request</a> and select one of the '
+        . 'subcategories under "Corporate Learning".</p>'
+        . '<p>Regards,<br>PSA Moodle Team</p>';
 
-    $plaintext_message = <<<EMAIL
-        Hi $user->firstname,\n
-        You have been enrolled in $course->fullname.\n
-        Please click the following link, signing in using your IDIR credentials:\n
-        https://learning.gww.gov.bc.ca/course/view.php?id=$course->id\n
-        If you have any issues with the course materials, please submit an AskMyHR request at http://www.gov.bc.ca/myhr/contact and select one of the subcategories under "Corporate Learning".\n\n
-        Regards,
-        PSA Moodle Team
-    EMAIL;
+    $plaintextmessage = 'Hi ' . $user->firstname . ",\n\n"
+        . 'You have been enrolled in '
+        . $course->fullname . ".\n\n"
+        . 'Please click the following link, signing in '
+        . "using your IDIR credentials:\n\n"
+        . $courseurl . "\n\n"
+        . 'If you have any issues with the course materials, '
+        . 'please submit an AskMyHR request at '
+        . $contacturl . ' and select one of the subcategories '
+        . "under \"Corporate Learning\".\n\n"
+        . "Regards,\n"
+        . 'PSA Moodle Team';
 
-    // Force HTML email regardless of user preference
-    $user->mailformat = 1; // Force HTML format
+    // Force HTML email regardless of user preference.
+    $user->mailformat = 1;
 
-    email_to_user($user, core_user::get_support_user(), $subject, $plaintext_message, $html_message);
+    email_to_user(
+        $user,
+        core_user::get_support_user(),
+        $subject,
+        $plaintextmessage,
+        $htmlmessage
+    );
 }
 
-function log_record($record_id, $hash, $record_date_created, $course_id, $elm_course_id, $class_code, $enrolment_id, $user_id, $first_name, $last_name, $user_email, $user_guid, $user_oprid, $user_person_id, $user_activity_id, $action, $status) {
+/**
+ * Log an enrolment record to the local_psaelmsync_logs table.
+ *
+ * @param int $recordid The generated record identifier.
+ * @param string $hash The SHA256 hash for deduplication.
+ * @param string $recorddatecreated The date the record was created in CData.
+ * @param int $courseid The Moodle course ID.
+ * @param int $elmcourseid The ELM course identifier.
+ * @param string $classcode The course short name or class code.
+ * @param int $enrolmentid The ELM enrolment identifier.
+ * @param int $userid The Moodle user ID.
+ * @param string $firstname The user's first name.
+ * @param string $lastname The user's last name.
+ * @param string $useremail The user's email address.
+ * @param string $userguid The user's GUID from ELM.
+ * @param string $useroprid The user's OPRID from ELM.
+ * @param int $userpersonid The user's person ID from ELM.
+ * @param int $useractivityid The user's activity ID from ELM.
+ * @param string $action The action taken (Enrol, Suspend, etc.).
+ * @param string $status The result status (Success, Error, etc.).
+ * @return void
+ */
+function log_record(
+    $recordid,
+    $hash,
+    $recorddatecreated,
+    $courseid,
+    $elmcourseid,
+    $classcode,
+    $enrolmentid,
+    $userid,
+    $firstname,
+    $lastname,
+    $useremail,
+    $userguid,
+    $useroprid,
+    $userpersonid,
+    $useractivityid,
+    $action,
+    $status
+) {
     global $DB;
 
-    // Ensure course_id is valid before lookup
+    // Ensure course ID is valid before lookup.
     $coursefullname = 'Not found!';
-    if (!empty($course_id) && is_numeric($course_id)) {
-        if ($course = $DB->get_record('course', array('id' => $course_id), 'fullname')) {
+    if (!empty($courseid) && is_numeric($courseid)) {
+        if ($course = $DB->get_record('course', ['id' => $courseid], 'fullname')) {
             $coursefullname = $course->fullname;
         }
     }
 
     $log = new stdClass();
-    $log->record_id = $record_id;
+    $log->record_id = $recordid;
     $log->sha256hash = $hash;
-    $log->record_date_created = $record_date_created;
-    $log->course_id = $course_id;
-    $log->elm_course_id = $elm_course_id;
-    $log->class_code = $class_code;
+    $log->record_date_created = $recorddatecreated;
+    $log->course_id = $courseid;
+    $log->elm_course_id = $elmcourseid;
+    $log->class_code = $classcode;
     $log->course_name = $coursefullname;
-    $log->user_id = $user_id;
-    $log->user_firstname = $first_name;
-    $log->user_lastname = $last_name;
-    $log->user_email = $user_email;
-    $log->user_guid = $user_guid; 
-    $log->oprid = $user_oprid;
-    $log->person_id = $user_person_id;
-    $log->activity_id = $user_activity_id;
-    $log->elm_enrolment_id = $enrolment_id;
+    $log->user_id = $userid;
+    $log->user_firstname = $firstname;
+    $log->user_lastname = $lastname;
+    $log->user_email = $useremail;
+    $log->user_guid = $userguid;
+    $log->oprid = $useroprid;
+    $log->person_id = $userpersonid;
+    $log->activity_id = $useractivityid;
+    $log->elm_enrolment_id = $enrolmentid;
     $log->action = $action;
     $log->status = $status;
     $log->timestamp = time();
@@ -538,125 +704,165 @@ function log_record($record_id, $hash, $record_date_created, $course_id, $elm_co
     $DB->insert_record('local_psaelmsync_logs', $log);
 }
 
-// Function to send failure notification email
-function send_failure_notification($type, $first_name, $last_name, $course_name, $email, $person_id, $oprid, $activity_id, $class_code, $error_message) {
+/**
+ * Send a failure notification email to configured administrators.
+ *
+ * @param string $type The type of failure (userfail, coursefail, emailmismatch).
+ * @param string $firstname The user's first name.
+ * @param string $lastname The user's last name.
+ * @param string $coursename The full name of the course.
+ * @param string $email The user's email address.
+ * @param int $personid The user's person ID from ELM.
+ * @param string $oprid The user's OPRID from ELM.
+ * @param int $activityid The user's activity ID from ELM.
+ * @param string $classcode The course short name or class code.
+ * @param string $errormessage The error message describing the failure.
+ * @return void
+ */
+function send_failure_notification(
+    $type,
+    $firstname,
+    $lastname,
+    $coursename,
+    $email,
+    $personid,
+    $oprid,
+    $activityid,
+    $classcode,
+    $errormessage
+) {
     global $CFG;
 
-    // Get the list of email addresses from admin settings
-    $admin_emails = get_config('local_psaelmsync', 'notificationemails');
-    
-    if (!empty($admin_emails)) {
-        $emails = explode(',', $admin_emails);
-        if($type == 'userfail') {
+    // Get the list of email addresses from admin settings.
+    $adminemails = get_config('local_psaelmsync', 'notificationemails');
 
+    if (!empty($adminemails)) {
+        $emails = explode(',', $adminemails);
+        if ($type == 'userfail') {
             $subject = "User Creation Failure Notification";
             $message = "A failure occurred during user creation.\n\n";
             $message .= "Details:\n";
-            $message .= "Name: {$first_name} {$last_name}\n";
-            $message .= "Course: {$course_name}\n";
-            $message .= "Class Code: {$class_code}\n";
+            $message .= "Name: {$firstname} {$lastname}\n";
+            $message .= "Course: {$coursename}\n";
+            $message .= "Class Code: {$classcode}\n";
             $message .= "Email: {$email}\n";
-            $message .= "Learner ID: {$person_id}\n";
+            $message .= "Learner ID: {$personid}\n";
             $message .= "IDIR: {$oprid}\n";
-            $message .= "Activity ID: {$activity_id}\n";
-            $message .= "Error: {$error_message}\n\n";
+            $message .= "Activity ID: {$activityid}\n";
+            $message .= "Error: {$errormessage}\n\n";
             $message .= "Please investigate the issue.";
-
-        } elseif($type == 'coursefail') {
-
+        } else if ($type == 'coursefail') {
             $subject = "Course Lookup Failure Notification";
             $message = "A failure occurred during course lookup.\n\n";
             $message .= "Details:\n";
-            $message .= "Course ID: {$error_message}\n";
-            $message .= "Name: {$first_name} {$last_name}\n";
-            $message .= "Course: {$course_name}\n";
-            $message .= "Class Code: {$class_code}\n";
+            $message .= "Course ID: {$errormessage}\n";
+            $message .= "Name: {$firstname} {$lastname}\n";
+            $message .= "Course: {$coursename}\n";
+            $message .= "Class Code: {$classcode}\n";
             $message .= "Email: {$email}\n";
-            $message .= "Learner ID: {$person_id}\n";
+            $message .= "Learner ID: {$personid}\n";
             $message .= "IDIR: {$oprid}\n";
-            $message .= "Activity ID: {$activity_id}\n";
+            $message .= "Activity ID: {$activityid}\n";
             $message .= "Please investigate the issue.";
-
-        } elseif($type == 'emailmismatch') {
-
+        } else if ($type == 'emailmismatch') {
             $subject = "User email mismatch";
             $message = "A discrepancy was found when enrolling a user.\n\n";
-            $message .= "{$error_message}\n";
-            $message .= "Name: {$first_name} {$last_name}\n";
-            $message .= "Course: {$course_name}\n";
-            $message .= "Class Code: {$class_code}\n";
+            $message .= "{$errormessage}\n";
+            $message .= "Name: {$firstname} {$lastname}\n";
+            $message .= "Course: {$coursename}\n";
+            $message .= "Class Code: {$classcode}\n";
             $message .= "Email: {$email}\n";
-            $message .= "Learner ID: {$person_id}\n";
+            $message .= "Learner ID: {$personid}\n";
             $message .= "IDIR: {$oprid}\n";
-            $message .= "Activity ID: {$activity_id}\n";
+            $message .= "Activity ID: {$activityid}\n";
             $message .= "Please investigate the issue.";
-
         }
-        
-        // Create a dummy user object for sending the email
+
+        // Create a dummy user object for sending the email.
         $dummyuser = new stdClass();
         $dummyuser->email = 'noreply-psalssync@gov.bc.ca';
         $dummyuser->firstname = 'System';
         $dummyuser->lastname = 'Notifier';
-        $dummyuser->id = -99; // Dummy user id
-        
-        foreach ($emails as $admin_email) {
-            // Trim to remove any extra whitespace around email addresses
-            $admin_email = trim($admin_email);
-            
-            // Create a recipient user object
+        // Dummy user ID.
+        $dummyuser->id = -99;
+
+        foreach ($emails as $adminemail) {
+            // Trim to remove any extra whitespace around email addresses.
+            $adminemail = trim($adminemail);
+
+            // Create a recipient user object.
             $recipient = new stdClass();
-            $recipient->email = $admin_email;
-            $recipient->id = -99; // Dummy user id
+            $recipient->email = $adminemail;
+            // Dummy user ID.
+            $recipient->id = -99;
             $recipient->firstname = 'Admin';
             $recipient->lastname = 'User';
-            $recipient->mailformat = 1; // Force HTML format
-            
-            // Send the email
+            // Force HTML format.
+            $recipient->mailformat = 1;
+
+            // Send the email.
             email_to_user($recipient, $dummyuser, $subject, $message);
         }
     }
 }
 
+/**
+ * Check the time since the last enrolment or suspend action and send
+ * an inactivity notification if the threshold has been exceeded.
+ *
+ * Only sends notifications between 6 AM and 6 PM on weekdays.
+ *
+ * @param int $notificationhours The number of hours of inactivity before notifying.
+ * @return void
+ */
 function check_last_enrolment_or_suspend($notificationhours) {
     global $DB;
 
     // Calculate the threshold time.
-    $threshold_time = time() - ($notificationhours * 3600);
+    $thresholdtime = time() - ($notificationhours * 3600);
 
     // Check if the current time is between 6 AM and 6 PM on a weekday.
-    $current_time = time();
-    $day_of_week = date('N', $current_time); // 1 (for Monday) through 7 (for Sunday)
-    $hour_of_day = date('G', $current_time); // 0 through 23
+    $currenttime = time();
+    // Day of week: 1 for Monday through 7 for Sunday.
+    $dayofweek = date('N', $currenttime);
+    // Hour of day: 0 through 23.
+    $hourofday = date('G', $currenttime);
 
-    if ($day_of_week >= 6 || $hour_of_day < 6 || $hour_of_day >= 18) {
-        // Do not send notifications outside of 6 AM - 6 PM, Monday to Friday.
+    if ($dayofweek >= 6 || $hourofday < 6 || $hourofday >= 18) {
+        // Do not send notifications outside of 6 AM to 6 PM, Monday to Friday.
         return;
     }
 
     // Query the last enrolment or suspend record.
-    $last_action = $DB->get_record_sql("
+    $lastaction = $DB->get_record_sql("
         SELECT MAX(timestamp) AS lasttime
         FROM {local_psaelmsync_logs}
         WHERE action IN ('Enrol', 'Suspend')
     ");
 
-    if ($last_action && $last_action->lasttime < $threshold_time) {
+    if ($lastaction && $lastaction->lasttime < $thresholdtime) {
         // If the last action was before the threshold, send a notification.
         send_inactivity_notification($notificationhours);
-
     }
 }
 
+/**
+ * Send an inactivity notification email to configured administrators.
+ *
+ * @param int $notificationhours The number of hours of inactivity that triggered this notification.
+ * @return void
+ */
 function send_inactivity_notification($notificationhours) {
     global $CFG;
 
-    $admin_emails = get_config('local_psaelmsync', 'notificationemails');
-    
-    if (!empty($admin_emails)) {
-        $emails = explode(',', $admin_emails);
+    $adminemails = get_config('local_psaelmsync', 'notificationemails');
+
+    if (!empty($adminemails)) {
+        $emails = explode(',', $adminemails);
         $subject = "PSA Enrol Sync Inactivity Notification";
-        $message = "No enrolment or suspension records have been processed in the last {$notificationhours} hours. Please check the system.";
+        $message = "No enrolment or suspension records have been "
+            . "processed in the last {$notificationhours} hours. "
+            . "Please check the system.";
 
         $dummyuser = new stdClass();
         $dummyuser->email = 'noreply-psalssync@gov.bc.ca';
@@ -664,16 +870,21 @@ function send_inactivity_notification($notificationhours) {
         $dummyuser->lastname = 'Notifier';
         $dummyuser->id = -99;
 
-        foreach ($emails as $admin_email) {
-            $admin_email = trim($admin_email);
+        foreach ($emails as $adminemail) {
+            $adminemail = trim($adminemail);
 
             $recipient = new stdClass();
-            $recipient->email = $admin_email;
+            $recipient->email = $adminemail;
             $recipient->id = -99;
             $recipient->firstname = 'Admin';
             $recipient->lastname = 'User';
 
-            email_to_user($recipient, $dummyuser, $subject, $message);
+            email_to_user(
+                $recipient,
+                $dummyuser,
+                $subject,
+                $message
+            );
         }
     }
 }

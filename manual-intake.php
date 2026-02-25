@@ -1,19 +1,36 @@
 <?php
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
 /**
  * Manual intake - Diff-style UI for reviewing and processing CData enrolment records.
  *
- * Provides a clear comparison between CData records and Moodle state,
- * with status categorization and enhanced filtering.
- *
- * Author: Allan Haggett <allan.haggett@gov.bc.ca>
+ * @package    local_psaelmsync
+ * @copyright  2025 BC Public Service
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-global $CFG, $DB, $PAGE, $OUTPUT;
+// This file mixes HTML and PHP; disable the per-block docblock check.
+// phpcs:disable moodle.Commenting.MissingDocblock
 
 require_once('../../config.php');
 require_once($CFG->libdir . '/filelib.php');
 require_once($CFG->dirroot . '/user/lib.php');
 require_once($CFG->dirroot . '/local/psaelmsync/lib.php');
+
+global $CFG, $DB, $PAGE, $OUTPUT;
 
 require_login();
 
@@ -22,89 +39,95 @@ require_capability('local/psaelmsync:viewlogs', $context);
 
 $PAGE->set_url('/local/psaelmsync/manual-intake.php');
 $PAGE->set_context($context);
-$PAGE->set_title(get_string('pluginname', 'local_psaelmsync') . ' - ' . get_string('queryapi', 'local_psaelmsync'));
+$PAGE->set_title(
+    get_string('pluginname', 'local_psaelmsync')
+    . ' - '
+    . get_string('queryapi', 'local_psaelmsync')
+);
 $PAGE->set_heading(get_string('queryapi', 'local_psaelmsync'));
 
 $apiurl = get_config('local_psaelmsync', 'apiurl');
 $apitoken = get_config('local_psaelmsync', 'apitoken');
 
-// Initialize variables
+// Initialize variables.
 $data = null;
 $feedback = '';
-$feedback_type = 'info';
+$feedbacktype = 'info';
 
-// Get filter values (persisted across requests)
-$filter_from = optional_param('from', '', PARAM_TEXT);
-$filter_to = optional_param('to', '', PARAM_TEXT);
-$filter_email = optional_param('email', '', PARAM_TEXT);
-$filter_guid = optional_param('guid', '', PARAM_TEXT);
-$filter_course = optional_param('course', '', PARAM_TEXT);
-$filter_state = optional_param('state', '', PARAM_ALPHA);
-$filter_status = optional_param('status', '', PARAM_ALPHA);
-$filter_firstname = optional_param('firstname', '', PARAM_TEXT);
-$filter_lastname = optional_param('lastname', '', PARAM_TEXT);
-$filter_oprid = optional_param('oprid', '', PARAM_TEXT);
-$filter_personid = optional_param('personid', '', PARAM_TEXT);
+// Get filter values (persisted across requests).
+$filterfrom = optional_param('from', '', PARAM_TEXT);
+$filterto = optional_param('to', '', PARAM_TEXT);
+$filteremail = optional_param('email', '', PARAM_TEXT);
+$filterguid = optional_param('guid', '', PARAM_TEXT);
+$filtercourse = optional_param('course', '', PARAM_TEXT);
+$filterstate = optional_param('state', '', PARAM_ALPHA);
+$filterstatus = optional_param('status', '', PARAM_ALPHA);
+$filterfirstname = optional_param('firstname', '', PARAM_TEXT);
+$filterlastname = optional_param('lastname', '', PARAM_TEXT);
+$filteroprid = optional_param('oprid', '', PARAM_TEXT);
+$filterpersonid = optional_param('personid', '', PARAM_TEXT);
 $apiurlfiltered = '';
 
 /**
  * Determine the status category for a record based on Moodle state comparison.
+ *
  * @param array $record The CData enrolment record.
  * @param object|false $user The Moodle user object or false if not found.
  * @param object|false $course The Moodle course object or false if not found.
- * @param bool $hash_exists Whether a successful log entry already exists for this record.
- * @param bool $is_enrolled Whether the user is currently enrolled in the course.
- * @return array Status info with 'status', 'label', 'icon', 'class', 'can_process', 'reason' keys.
+ * @param bool $hashexists Whether a successful log entry already exists.
+ * @param bool $isenrolled Whether the user is currently enrolled.
+ * @return array Status info with status, label, icon, class, can_process, reason keys.
  */
-function determine_record_status($record, $user, $course, $hash_exists, $is_enrolled) {
-    // Already processed successfully
-    if ($hash_exists) {
+function determine_record_status($record, $user, $course, $hashexists, $isenrolled) {
+    // Already processed successfully.
+    if ($hashexists) {
         return [
             'status' => 'done',
             'label' => 'Already Processed',
             'icon' => '✓',
             'class' => 'secondary',
             'can_process' => false,
-            'reason' => 'This record has already been processed.'
+            'reason' => 'This record has already been processed.',
         ];
     }
 
-    // Course not found
+    // Course not found.
     if (!$course) {
+        $courseid = $record['COURSE_IDENTIFIER'];
         return [
             'status' => 'blocked',
             'label' => 'Course Not Found',
             'icon' => '✗',
             'class' => 'danger',
             'can_process' => false,
-            'reason' => "Course with ELM ID {$record['COURSE_IDENTIFIER']} does not exist in Moodle."
+            'reason' => "Course with ELM ID {$courseid} does not exist in Moodle.",
         ];
     }
 
-    // Check if action is already done (enrolled when should be enrolled, etc.)
-    if ($record['COURSE_STATE'] === 'Enrol' && $is_enrolled) {
+    // Check if action is already done.
+    if ($record['COURSE_STATE'] === 'Enrol' && $isenrolled) {
         return [
             'status' => 'done',
             'label' => 'Already Enrolled',
             'icon' => '✓',
             'class' => 'secondary',
             'can_process' => false,
-            'reason' => 'User is already enrolled in this course.'
+            'reason' => 'User is already enrolled in this course.',
         ];
     }
 
-    if ($record['COURSE_STATE'] === 'Suspend' && !$is_enrolled) {
+    if ($record['COURSE_STATE'] === 'Suspend' && !$isenrolled) {
         return [
             'status' => 'done',
             'label' => 'Not Enrolled',
             'icon' => '✓',
             'class' => 'secondary',
             'can_process' => false,
-            'reason' => 'User is not enrolled, nothing to suspend.'
+            'reason' => 'User is not enrolled, nothing to suspend.',
         ];
     }
 
-    // User doesn't exist - will be created
+    // User does not exist and will be created.
     if (!$user) {
         return [
             'status' => 'new_user',
@@ -112,11 +135,11 @@ function determine_record_status($record, $user, $course, $hash_exists, $is_enro
             'icon' => '+',
             'class' => 'info',
             'can_process' => true,
-            'reason' => 'User will be created and enrolled.'
+            'reason' => 'User will be created and enrolled.',
         ];
     }
 
-    // Email mismatch
+    // Email mismatch.
     if (strtolower($user->email) !== strtolower($record['EMAIL'])) {
         return [
             'status' => 'mismatch',
@@ -124,23 +147,25 @@ function determine_record_status($record, $user, $course, $hash_exists, $is_enro
             'icon' => '⚠',
             'class' => 'warning',
             'can_process' => false,
-            'reason' => 'The email in CData does not match the Moodle account. Manual investigation required.'
+            'reason' => 'The email in CData does not match the Moodle account.'
+                . ' Manual investigation required.',
         ];
     }
 
-    // Ready to process
+    // Ready to process.
     return [
         'status' => 'ready',
         'label' => 'Ready',
         'icon' => '●',
         'class' => 'success',
         'can_process' => true,
-        'reason' => "Ready to {$record['COURSE_STATE']}."
+        'reason' => "Ready to {$record['COURSE_STATE']}.",
     ];
 }
 
 /**
  * Check if user is enrolled in course by idnumber.
+ *
  * @param int|string $courseidnumber The course idnumber (ELM course ID).
  * @param int $userid The Moodle user ID.
  * @return bool True if the user is actively enrolled.
@@ -153,9 +178,9 @@ function check_user_enrolled($courseidnumber, $userid) {
         return false;
     }
 
-    $user_courses = enrol_get_users_courses($userid, true, ['id']);
-    foreach ($user_courses as $user_course) {
-        if ($user_course->id == $course->id) {
+    $usercourses = enrol_get_users_courses($userid, true, ['id']);
+    foreach ($usercourses as $usercourse) {
+        if ($usercourse->id == $course->id) {
             return true;
         }
     }
@@ -164,21 +189,22 @@ function check_user_enrolled($courseidnumber, $userid) {
 
 /**
  * Create a new user (local helper matching lib.php pattern).
- * @param string $user_email The user's email address.
- * @param string $first_name The user's first name.
- * @param string $last_name The user's last name.
- * @param string $user_guid The user's GUID (stored as idnumber).
+ *
+ * @param string $useremail The user's email address.
+ * @param string $firstname The user's first name.
+ * @param string $lastname The user's last name.
+ * @param string $userguid The user's GUID (stored as idnumber).
  * @return object The created user object.
  */
-function create_new_user_local($user_email, $first_name, $last_name, $user_guid) {
+function create_new_user_local($useremail, $firstname, $lastname, $userguid) {
     global $DB;
 
     $user = new stdClass();
-    $user->username = strtolower($user_email);
-    $user->email = $user_email;
-    $user->idnumber = $user_guid;
-    $user->firstname = $first_name;
-    $user->lastname = $last_name;
+    $user->username = strtolower($useremail);
+    $user->email = $useremail;
+    $user->idnumber = $userguid;
+    $user->firstname = $firstname;
+    $user->lastname = $lastname;
     $user->password = hash_internal_user_password(random_string(8));
     $user->confirmed = 1;
     $user->auth = 'oauth2';
@@ -192,417 +218,577 @@ function create_new_user_local($user_email, $first_name, $last_name, $user_guid)
     return $user;
 }
 
-// Process form submissions
+// Process form submissions.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
     require_sesskey();
 
-    $record_date_created = required_param('record_date_created', PARAM_TEXT);
-    $course_state = required_param('course_state', PARAM_TEXT);
-    $elm_course_id = required_param('elm_course_id', PARAM_TEXT);
-    $elm_enrolment_id = required_param('elm_enrolment_id', PARAM_TEXT);
-    $user_guid = required_param('guid', PARAM_TEXT);
-    $class_code = required_param('class_code', PARAM_TEXT);
-    $user_email = required_param('email', PARAM_TEXT);
-    $first_name = required_param('first_name', PARAM_TEXT);
-    $last_name = required_param('last_name', PARAM_TEXT);
+    $recorddatecreated = required_param('record_date_created', PARAM_TEXT);
+    $coursestate = required_param('course_state', PARAM_TEXT);
+    $elmcourseid = required_param('elm_course_id', PARAM_TEXT);
+    $elmenrolmentid = required_param('elm_enrolment_id', PARAM_TEXT);
+    $userguid = required_param('guid', PARAM_TEXT);
+    $classcode = required_param('class_code', PARAM_TEXT);
+    $useremail = required_param('email', PARAM_TEXT);
+    $firstname = required_param('first_name', PARAM_TEXT);
+    $lastname = required_param('last_name', PARAM_TEXT);
     $oprid = optional_param('oprid', '', PARAM_TEXT);
-    $person_id = optional_param('person_id', '', PARAM_TEXT);
-    $activity_id = optional_param('activity_id', '', PARAM_TEXT);
+    $personid = optional_param('person_id', '', PARAM_TEXT);
+    $activityid = optional_param('activity_id', '', PARAM_TEXT);
 
     // Check the ignore list before processing.
-    if (local_psaelmsync_is_ignored_course($elm_course_id)) {
-        $feedback = "Course ID " . s($elm_course_id) . " is on the ignore list and will not be processed.";
-        $feedback_type = 'warning';
+    if (local_psaelmsync_is_ignored_course($elmcourseid)) {
+        $feedback = "Course ID "
+            . s($elmcourseid)
+            . " is on the ignore list and will not be processed.";
+        $feedbacktype = 'warning';
     } else {
+        $hashcontent = $recorddatecreated
+            . $elmcourseid . $classcode
+            . $coursestate . $userguid . $useremail;
+        $hash = hash('sha256', $hashcontent);
 
-    $hash_content = $record_date_created . $elm_course_id . $class_code . $course_state . $user_guid . $user_email;
-    $hash = hash('sha256', $hash_content);
+        $hashcheck = $DB->get_record(
+            'local_psaelmsync_logs',
+            ['sha256hash' => $hash],
+            '*',
+            IGNORE_MULTIPLE
+        );
 
-    $hashcheck = $DB->get_record('local_psaelmsync_logs', ['sha256hash' => $hash], '*', IGNORE_MULTIPLE);
-
-    if ($hashcheck && $hashcheck->status === 'Success') {
-        $feedback = 'This record has already been processed.';
-        $feedback_type = 'warning';
-    } else {
-        $course = $DB->get_record('course', ['idnumber' => $elm_course_id]);
-
-        if (!$course) {
-            $feedback = "Course with ELM ID " . s($elm_course_id) . " not found in Moodle.";
-            $feedback_type = 'danger';
+        if ($hashcheck && $hashcheck->status === 'Success') {
+            $feedback = 'This record has already been processed.';
+            $feedbacktype = 'warning';
         } else {
-            $user = $DB->get_record('user', ['idnumber' => $user_guid]);
+            $course = $DB->get_record(
+                'course',
+                ['idnumber' => $elmcourseid]
+            );
 
-            if (!$user) {
-                $user = create_new_user_local($user_email, $first_name, $last_name, $user_guid);
+            if (!$course) {
+                $feedback = "Course with ELM ID "
+                    . s($elmcourseid) . " not found in Moodle.";
+                $feedbacktype = 'danger';
+            } else {
+                $user = $DB->get_record(
+                    'user',
+                    ['idnumber' => $userguid]
+                );
 
                 if (!$user) {
-                    $useremailcheck = $DB->get_record('user', ['email' => $user_email]);
-                    if ($useremailcheck) {
-                        $feedback = "Failed to create user. An account with email " . s($user_email) . " already exists. ";
-                        $feedback .= "<a href='/user/view.php?id={$useremailcheck->id}' target='_blank'>View existing account</a>";
-                    } else {
-                        $feedback = "Failed to create a new user for GUID " . s($user_guid) . ".";
-                    }
-                    $feedback_type = 'danger';
-                }
-            }
+                    $user = create_new_user_local(
+                        $useremail,
+                        $firstname,
+                        $lastname,
+                        $userguid
+                    );
 
-            if ($user) {
-                // Check for email mismatch
-                if (strtolower($user->email) !== strtolower($user_email)) {
-                    $feedback = "Email mismatch: Moodle has '" . s($user->email) . "' but CData has '" . s($user_email) . "'. ";
-                    $useremailcheck = $DB->get_record('user', ['email' => $user_email]);
-                    if ($useremailcheck) {
-                        $feedback .= "Another account exists with the CData email: ";
-                        $feedback .= "<a href='/user/view.php?id={$useremailcheck->id}' target='_blank'>View account</a>";
-                    }
-                    $feedback_type = 'danger';
-                } else {
-                    $manual_enrol = enrol_get_plugin('manual');
-                    $enrol_instances = enrol_get_instances($course->id, true);
-                    $manual_instance = null;
-
-                    foreach ($enrol_instances as $instance) {
-                        if ($instance->enrol === 'manual') {
-                            $manual_instance = $instance;
-                            break;
+                    if (!$user) {
+                        $useremailcheck = $DB->get_record(
+                            'user',
+                            ['email' => $useremail]
+                        );
+                        if ($useremailcheck) {
+                            $feedback = "Failed to create user."
+                                . " An account with email "
+                                . s($useremail)
+                                . " already exists. ";
+                            $feedback .= "<a href='/user/view.php?id="
+                                . $useremailcheck->id
+                                . "' target='_blank'>"
+                                . "View existing account</a>";
+                        } else {
+                            $feedback = "Failed to create a new"
+                                . " user for GUID "
+                                . s($userguid) . ".";
                         }
+                        $feedbacktype = 'danger';
                     }
+                }
 
-                    if ($manual_instance && !empty($manual_instance->roleid)) {
-                        if ($course_state === 'Enrol') {
-                            $manual_enrol->enrol_user($manual_instance, $user->id, $manual_instance->roleid, 0, 0, ENROL_USER_ACTIVE);
+                if ($user) {
+                    // Check for email mismatch.
+                    if (strtolower($user->email) !== strtolower($useremail)) {
+                        $feedback = "Email mismatch: Moodle has '"
+                            . s($user->email) . "' but CData has '"
+                            . s($useremail) . "'. ";
+                        $useremailcheck = $DB->get_record(
+                            'user',
+                            ['email' => $useremail]
+                        );
+                        if ($useremailcheck) {
+                            $feedback .= "Another account exists"
+                                . " with the CData email: ";
+                            $feedback .= "<a href='/user/view.php?id="
+                                . $useremailcheck->id
+                                . "' target='_blank'>"
+                                . "View account</a>";
+                        }
+                        $feedbacktype = 'danger';
+                    } else {
+                        $manualenrol = enrol_get_plugin('manual');
+                        $enrolinstances = enrol_get_instances(
+                            $course->id,
+                            true
+                        );
+                        $manualinstance = null;
 
-                            $is_enrolled = $DB->record_exists('user_enrolments', ['userid' => $user->id, 'enrolid' => $manual_instance->id]);
+                        foreach ($enrolinstances as $instance) {
+                            if ($instance->enrol === 'manual') {
+                                $manualinstance = $instance;
+                                break;
+                            }
+                        }
 
-                            if ($is_enrolled) {
+                        if (
+                            $manualinstance
+                            && !empty($manualinstance->roleid)
+                        ) {
+                            if ($coursestate === 'Enrol') {
+                                $manualenrol->enrol_user(
+                                    $manualinstance,
+                                    $user->id,
+                                    $manualinstance->roleid,
+                                    0,
+                                    0,
+                                    ENROL_USER_ACTIVE
+                                );
+
+                                $isenrolled = $DB->record_exists(
+                                    'user_enrolments',
+                                    [
+                                        'userid' => $user->id,
+                                        'enrolid' => $manualinstance->id,
+                                    ]
+                                );
+
+                                if ($isenrolled) {
+                                    $log = new stdClass();
+                                    $log->record_id = time();
+                                    $log->sha256hash = $hash;
+                                    $log->record_date_created =
+                                        $recorddatecreated;
+                                    $log->course_id = $course->id;
+                                    $log->elm_course_id = $elmcourseid;
+                                    $log->class_code = $classcode;
+                                    $log->course_name = $course->fullname;
+                                    $log->user_id = $user->id;
+                                    $log->user_firstname =
+                                        $user->firstname;
+                                    $log->user_lastname =
+                                        $user->lastname;
+                                    $log->user_guid = $user->idnumber;
+                                    $log->user_email = $user->email;
+                                    $log->elm_enrolment_id =
+                                        $elmenrolmentid;
+                                    $log->oprid = $oprid;
+                                    $log->person_id = $personid;
+                                    $log->activity_id = $activityid;
+                                    $log->action = 'Manual Enrol';
+                                    $log->status = 'Success';
+                                    $log->timestamp = time();
+
+                                    $DB->insert_record(
+                                        'local_psaelmsync_logs',
+                                        $log
+                                    );
+
+                                    $feedback = "Successfully enrolled "
+                                        . s($user->email) . " in "
+                                        . s($course->fullname) . ".";
+                                    $feedbacktype = 'success';
+
+                                    send_welcome_email($user, $course);
+                                } else {
+                                    $feedback = "Failed to enrol "
+                                        . s($user->email)
+                                        . " in the course.";
+                                    $feedbacktype = 'danger';
+                                }
+                            } else if ($coursestate === 'Suspend') {
+                                $manualenrol->update_user_enrol(
+                                    $manualinstance,
+                                    $user->id,
+                                    ENROL_USER_SUSPENDED
+                                );
+
                                 $log = new stdClass();
                                 $log->record_id = time();
                                 $log->sha256hash = $hash;
-                                $log->record_date_created = $record_date_created;
+                                $log->record_date_created =
+                                    $recorddatecreated;
                                 $log->course_id = $course->id;
-                                $log->elm_course_id = $elm_course_id;
-                                $log->class_code = $class_code;
+                                $log->elm_course_id = $elmcourseid;
+                                $log->class_code = $classcode;
                                 $log->course_name = $course->fullname;
                                 $log->user_id = $user->id;
-                                $log->user_firstname = $user->firstname;
-                                $log->user_lastname = $user->lastname;
+                                $log->user_firstname =
+                                    $user->firstname;
+                                $log->user_lastname =
+                                    $user->lastname;
                                 $log->user_guid = $user->idnumber;
                                 $log->user_email = $user->email;
-                                $log->elm_enrolment_id = $elm_enrolment_id;
+                                $log->elm_enrolment_id =
+                                    $elmenrolmentid;
                                 $log->oprid = $oprid;
-                                $log->person_id = $person_id;
-                                $log->activity_id = $activity_id;
-                                $log->action = 'Manual Enrol';
+                                $log->person_id = $personid;
+                                $log->activity_id = $activityid;
+                                $log->action = 'Manual Suspend';
                                 $log->status = 'Success';
                                 $log->timestamp = time();
 
-                                $DB->insert_record('local_psaelmsync_logs', $log);
+                                $DB->insert_record(
+                                    'local_psaelmsync_logs',
+                                    $log
+                                );
 
-                                $feedback = "Successfully enrolled " . s($user->email) . " in " . s($course->fullname) . ".";
-                                $feedback_type = 'success';
-
-                                send_welcome_email($user, $course);
+                                $feedback = "Successfully suspended "
+                                    . s($user->email) . " from "
+                                    . s($course->fullname) . ".";
+                                $feedbacktype = 'success';
                             } else {
-                                $feedback = "Failed to enrol " . s($user->email) . " in the course.";
-                                $feedback_type = 'danger';
+                                $feedback = "Invalid course state: "
+                                    . s($coursestate);
+                                $feedbacktype = 'danger';
                             }
-                        } elseif ($course_state === 'Suspend') {
-                            $manual_enrol->update_user_enrol($manual_instance, $user->id, ENROL_USER_SUSPENDED);
-
-                            $log = new stdClass();
-                            $log->record_id = time();
-                            $log->sha256hash = $hash;
-                            $log->record_date_created = $record_date_created;
-                            $log->course_id = $course->id;
-                            $log->elm_course_id = $elm_course_id;
-                            $log->class_code = $class_code;
-                            $log->course_name = $course->fullname;
-                            $log->user_id = $user->id;
-                            $log->user_firstname = $user->firstname;
-                            $log->user_lastname = $user->lastname;
-                            $log->user_guid = $user->idnumber;
-                            $log->user_email = $user->email;
-                            $log->elm_enrolment_id = $elm_enrolment_id;
-                            $log->oprid = $oprid;
-                            $log->person_id = $person_id;
-                            $log->activity_id = $activity_id;
-                            $log->action = 'Manual Suspend';
-                            $log->status = 'Success';
-                            $log->timestamp = time();
-
-                            $DB->insert_record('local_psaelmsync_logs', $log);
-
-                            $feedback = "Successfully suspended " . s($user->email) . " from " . s($course->fullname) . ".";
-                            $feedback_type = 'success';
                         } else {
-                            $feedback = "Invalid course state: " . s($course_state);
-                            $feedback_type = 'danger';
+                            $feedback = "No manual enrolment instance"
+                                . " found for this course.";
+                            $feedbacktype = 'danger';
                         }
-                    } else {
-                        $feedback = "No manual enrolment instance found for this course.";
-                        $feedback_type = 'danger';
                     }
                 }
             }
         }
     }
-    } // End ignore list else.
 }
 
-// Handle bulk processing
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_process'])) {
+// Handle bulk processing.
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_POST['bulk_process'])
+) {
     require_sesskey();
 
-    $selected_records = optional_param_array('selected_records', [], PARAM_RAW);
-    $success_count = 0;
-    $error_count = 0;
+    $selectedrecords = optional_param_array(
+        'selected_records',
+        [],
+        PARAM_RAW
+    );
+    $successcount = 0;
+    $errorcount = 0;
     $errors = [];
 
-    foreach ($selected_records as $encoded_record) {
-        $record_data = json_decode(base64_decode($encoded_record), true);
-        if (!$record_data) {
-            $error_count++;
+    foreach ($selectedrecords as $encodedrecord) {
+        $recorddata = json_decode(base64_decode($encodedrecord), true);
+        if (!$recorddata) {
+            $errorcount++;
             continue;
         }
 
-        $record_date_created = $record_data['date_created'];
-        $course_state = $record_data['course_state'];
-        $elm_course_id = $record_data['elm_course_id'];
-        $elm_enrolment_id = $record_data['elm_enrolment_id'];
-        $user_guid = $record_data['guid'];
-        $class_code = $record_data['class_code'];
-        $user_email = $record_data['email'];
-        $first_name = $record_data['first_name'];
-        $last_name = $record_data['last_name'];
-        $oprid = $record_data['oprid'] ?? '';
-        $person_id = $record_data['person_id'] ?? '';
-        $activity_id = $record_data['activity_id'] ?? '';
+        $recorddatecreated = $recorddata['date_created'];
+        $coursestate = $recorddata['course_state'];
+        $elmcourseid = $recorddata['elm_course_id'];
+        $elmenrolmentid = $recorddata['elm_enrolment_id'];
+        $userguid = $recorddata['guid'];
+        $classcode = $recorddata['class_code'];
+        $useremail = $recorddata['email'];
+        $firstname = $recorddata['first_name'];
+        $lastname = $recorddata['last_name'];
+        $oprid = $recorddata['oprid'] ?? '';
+        $personid = $recorddata['person_id'] ?? '';
+        $activityid = $recorddata['activity_id'] ?? '';
 
         // Skip courses on the ignore list.
-        if (local_psaelmsync_is_ignored_course($elm_course_id)) {
+        if (local_psaelmsync_is_ignored_course($elmcourseid)) {
             continue;
         }
 
-        $hash_content = $record_date_created . $elm_course_id . $class_code . $course_state . $user_guid . $user_email;
-        $hash = hash('sha256', $hash_content);
+        $hashcontent = $recorddatecreated
+            . $elmcourseid . $classcode
+            . $coursestate . $userguid . $useremail;
+        $hash = hash('sha256', $hashcontent);
 
-        $hashcheck = $DB->get_record('local_psaelmsync_logs', ['sha256hash' => $hash], '*', IGNORE_MULTIPLE);
+        $hashcheck = $DB->get_record(
+            'local_psaelmsync_logs',
+            ['sha256hash' => $hash],
+            '*',
+            IGNORE_MULTIPLE
+        );
 
         if ($hashcheck && $hashcheck->status === 'Success') {
-            continue; // Skip already processed successfully
-        }
-
-        $course = $DB->get_record('course', ['idnumber' => $elm_course_id]);
-        if (!$course) {
-            $error_count++;
-            $errors[] = "Course {$elm_course_id} not found";
+            // Skip already processed successfully.
             continue;
         }
 
-        $user = $DB->get_record('user', ['idnumber' => $user_guid]);
+        $course = $DB->get_record(
+            'course',
+            ['idnumber' => $elmcourseid]
+        );
+        if (!$course) {
+            $errorcount++;
+            $errors[] = "Course {$elmcourseid} not found";
+            continue;
+        }
+
+        $user = $DB->get_record('user', ['idnumber' => $userguid]);
         if (!$user) {
-            $user = create_new_user_local($user_email, $first_name, $last_name, $user_guid);
+            $user = create_new_user_local(
+                $useremail,
+                $firstname,
+                $lastname,
+                $userguid
+            );
             if (!$user) {
-                $error_count++;
-                $errors[] = "Failed to create user {$user_email}";
+                $errorcount++;
+                $errors[] = "Failed to create user {$useremail}";
                 continue;
             }
         }
 
-        // Check for email mismatch
-        if (strtolower($user->email) !== strtolower($user_email)) {
-            $error_count++;
-            $errors[] = "Email mismatch for {$user_email}";
+        // Check for email mismatch.
+        if (strtolower($user->email) !== strtolower($useremail)) {
+            $errorcount++;
+            $errors[] = "Email mismatch for {$useremail}";
             continue;
         }
 
-        $manual_enrol = enrol_get_plugin('manual');
-        $enrol_instances = enrol_get_instances($course->id, true);
-        $manual_instance = null;
+        $manualenrol = enrol_get_plugin('manual');
+        $enrolinstances = enrol_get_instances($course->id, true);
+        $manualinstance = null;
 
-        foreach ($enrol_instances as $instance) {
+        foreach ($enrolinstances as $instance) {
             if ($instance->enrol === 'manual') {
-                $manual_instance = $instance;
+                $manualinstance = $instance;
                 break;
             }
         }
 
-        if (!$manual_instance || empty($manual_instance->roleid)) {
-            $error_count++;
-            $errors[] = "No manual enrolment for course {$course->shortname}";
+        if (!$manualinstance || empty($manualinstance->roleid)) {
+            $errorcount++;
+            $errors[] = "No manual enrolment for course "
+                . $course->shortname;
             continue;
         }
 
-        if ($course_state === 'Enrol') {
-            $manual_enrol->enrol_user($manual_instance, $user->id, $manual_instance->roleid, 0, 0, ENROL_USER_ACTIVE);
+        if ($coursestate === 'Enrol') {
+            $manualenrol->enrol_user(
+                $manualinstance,
+                $user->id,
+                $manualinstance->roleid,
+                0,
+                0,
+                ENROL_USER_ACTIVE
+            );
 
             $log = new stdClass();
             $log->record_id = time();
             $log->sha256hash = $hash;
-            $log->record_date_created = $record_date_created;
+            $log->record_date_created = $recorddatecreated;
             $log->course_id = $course->id;
-            $log->elm_course_id = $elm_course_id;
-            $log->class_code = $class_code;
+            $log->elm_course_id = $elmcourseid;
+            $log->class_code = $classcode;
             $log->course_name = $course->fullname;
             $log->user_id = $user->id;
             $log->user_firstname = $user->firstname;
             $log->user_lastname = $user->lastname;
             $log->user_guid = $user->idnumber;
             $log->user_email = $user->email;
-            $log->elm_enrolment_id = $elm_enrolment_id;
+            $log->elm_enrolment_id = $elmenrolmentid;
             $log->oprid = $oprid;
-            $log->person_id = $person_id;
-            $log->activity_id = $activity_id;
+            $log->person_id = $personid;
+            $log->activity_id = $activityid;
             $log->action = 'Manual Enrol (Bulk)';
             $log->status = 'Success';
             $log->timestamp = time();
 
             $DB->insert_record('local_psaelmsync_logs', $log);
             send_welcome_email($user, $course);
-            $success_count++;
-
-        } elseif ($course_state === 'Suspend') {
-            $manual_enrol->update_user_enrol($manual_instance, $user->id, ENROL_USER_SUSPENDED);
+            $successcount++;
+        } else if ($coursestate === 'Suspend') {
+            $manualenrol->update_user_enrol(
+                $manualinstance,
+                $user->id,
+                ENROL_USER_SUSPENDED
+            );
 
             $log = new stdClass();
             $log->record_id = time();
             $log->sha256hash = $hash;
-            $log->record_date_created = $record_date_created;
+            $log->record_date_created = $recorddatecreated;
             $log->course_id = $course->id;
-            $log->elm_course_id = $elm_course_id;
-            $log->class_code = $class_code;
+            $log->elm_course_id = $elmcourseid;
+            $log->class_code = $classcode;
             $log->course_name = $course->fullname;
             $log->user_id = $user->id;
             $log->user_firstname = $user->firstname;
             $log->user_lastname = $user->lastname;
             $log->user_guid = $user->idnumber;
             $log->user_email = $user->email;
-            $log->elm_enrolment_id = $elm_enrolment_id;
+            $log->elm_enrolment_id = $elmenrolmentid;
             $log->oprid = $oprid;
-            $log->person_id = $person_id;
-            $log->activity_id = $activity_id;
+            $log->person_id = $personid;
+            $log->activity_id = $activityid;
             $log->action = 'Manual Suspend (Bulk)';
             $log->status = 'Success';
             $log->timestamp = time();
 
             $DB->insert_record('local_psaelmsync_logs', $log);
-            $success_count++;
+            $successcount++;
         }
     }
 
-    if ($success_count > 0) {
-        $feedback = "Bulk processing complete: {$success_count} successful";
-        if ($error_count > 0) {
-            $feedback .= ", {$error_count} errors";
+    if ($successcount > 0) {
+        $feedback = "Bulk processing complete: "
+            . "{$successcount} successful";
+        if ($errorcount > 0) {
+            $feedback .= ", {$errorcount} errors";
         }
-        $feedback_type = $error_count > 0 ? 'warning' : 'success';
+        $feedbacktype = $errorcount > 0 ? 'warning' : 'success';
     } else {
-        $feedback = "Bulk processing failed: {$error_count} errors";
-        $feedback_type = 'danger';
+        $feedback = "Bulk processing failed: "
+            . "{$errorcount} errors";
+        $feedbacktype = 'danger';
     }
     if (!empty($errors)) {
-        $feedback .= "<br><small>" . implode('; ', array_slice($errors, 0, 5)) . (count($errors) > 5 ? '...' : '') . "</small>";
+        $errorsummary = implode(
+            '; ',
+            array_slice($errors, 0, 5)
+        );
+        $ellipsis = count($errors) > 5 ? '...' : '';
+        $feedback .= "<br><small>"
+            . $errorsummary . $ellipsis . "</small>";
     }
 }
 
-// Build API query if filters are provided
-$has_filters = !empty($filter_email) || !empty($filter_guid) || !empty($filter_from) || !empty($filter_course)
-    || !empty($filter_firstname) || !empty($filter_lastname) || !empty($filter_oprid) || !empty($filter_personid);
+// Build API query if filters are provided.
+$hasfilters = !empty($filteremail)
+    || !empty($filterguid)
+    || !empty($filterfrom)
+    || !empty($filtercourse)
+    || !empty($filterfirstname)
+    || !empty($filterlastname)
+    || !empty($filteroprid)
+    || !empty($filterpersonid);
 
-if ($has_filters) {
+if ($hasfilters) {
     $filters = [];
 
-    if (!empty($filter_email)) {
-        $filters[] = "email+eq+%27" . urlencode($filter_email) . "%27";
+    if (!empty($filteremail)) {
+        $filters[] = "email+eq+%27"
+            . urlencode($filteremail) . "%27";
     }
-    if (!empty($filter_guid)) {
-        $filters[] = "GUID+eq+%27" . urlencode($filter_guid) . "%27";
+    if (!empty($filterguid)) {
+        $filters[] = "GUID+eq+%27"
+            . urlencode($filterguid) . "%27";
     }
-    if (!empty($filter_firstname)) {
-        $filters[] = "FIRST_NAME+eq+%27" . urlencode($filter_firstname) . "%27";
+    if (!empty($filterfirstname)) {
+        $filters[] = "FIRST_NAME+eq+%27"
+            . urlencode($filterfirstname) . "%27";
     }
-    if (!empty($filter_lastname)) {
-        $filters[] = "LAST_NAME+eq+%27" . urlencode($filter_lastname) . "%27";
+    if (!empty($filterlastname)) {
+        $filters[] = "LAST_NAME+eq+%27"
+            . urlencode($filterlastname) . "%27";
     }
-    if (!empty($filter_oprid)) {
-        $filters[] = "OPRID+eq+%27" . urlencode($filter_oprid) . "%27";
+    if (!empty($filteroprid)) {
+        $filters[] = "OPRID+eq+%27"
+            . urlencode($filteroprid) . "%27";
     }
-    if (!empty($filter_personid)) {
-        $filters[] = "PERSON_ID+eq+" . urlencode($filter_personid);
+    if (!empty($filterpersonid)) {
+        $filters[] = "PERSON_ID+eq+"
+            . urlencode($filterpersonid);
     }
-    if (!empty($filter_course)) {
-        // Support both course ID and shortname search
-        if (is_numeric($filter_course)) {
-            $filters[] = "COURSE_IDENTIFIER+eq+" . urlencode($filter_course);
+    if (!empty($filtercourse)) {
+        // Support both course ID and shortname search.
+        if (is_numeric($filtercourse)) {
+            $filters[] = "COURSE_IDENTIFIER+eq+"
+                . urlencode($filtercourse);
         } else {
-            $filters[] = "COURSE_SHORTNAME+eq+%27" . urlencode($filter_course) . "%27";
+            $filters[] = "COURSE_SHORTNAME+eq+%27"
+                . urlencode($filtercourse) . "%27";
         }
     }
-    if (!empty($filter_from) && !empty($filter_to)) {
-        $filters[] = "date_created+gt+%27" . urlencode($filter_from) . "%27";
-        $filters[] = "date_created+lt+%27" . urlencode($filter_to) . "%27";
-    } elseif (!empty($filter_from)) {
-        $filters[] = "date_created+gt+%27" . urlencode($filter_from) . "%27";
+    if (!empty($filterfrom) && !empty($filterto)) {
+        $filters[] = "date_created+gt+%27"
+            . urlencode($filterfrom) . "%27";
+        $filters[] = "date_created+lt+%27"
+            . urlencode($filterto) . "%27";
+    } else if (!empty($filterfrom)) {
+        $filters[] = "date_created+gt+%27"
+            . urlencode($filterfrom) . "%27";
     }
-    if (!empty($filter_state)) {
-        $filters[] = "COURSE_STATE+eq+%27" . urlencode($filter_state) . "%27";
+    if (!empty($filterstate)) {
+        $filters[] = "COURSE_STATE+eq+%27"
+            . urlencode($filterstate) . "%27";
     }
 
-    $apiurlfiltered = $apiurl . "?%24orderby=COURSE_STATE_DATE,date_created+asc";
+    $apiurlfiltered = $apiurl
+        . "?%24orderby=COURSE_STATE_DATE,date_created+asc";
     if (!empty($filters)) {
-        $apiurlfiltered .= "&%24filter=" . implode("+and+", $filters);
+        $apiurlfiltered .= "&%24filter="
+            . implode("+and+", $filters);
     }
 
-    $options = array(
+    $options = [
         'RETURNTRANSFER' => 1,
         'HEADER' => 0,
-    );
-    $header = array('x-cdata-authtoken: ' . $apitoken);
+    ];
+    $header = ['x-cdata-authtoken: ' . $apitoken];
     $curl = new curl();
     $curl->setHeader($header);
     $response = $curl->get($apiurlfiltered, $options);
 
-    // Check for cURL-level errors
+    // Check for cURL-level errors.
     if ($curl->get_errno()) {
         $feedback = 'cURL Error: ' . $curl->error;
-        $feedback_type = 'danger';
+        $feedbacktype = 'danger';
     } else {
-        // Check HTTP status code
+        // Check HTTP status code.
         $info = $curl->get_info();
-        $http_code = $info['http_code'] ?? 0;
+        $httpcode = $info['http_code'] ?? 0;
 
-        if ($http_code >= 400) {
-            $feedback = "API Error: HTTP {$http_code}";
-            if ($http_code == 502) {
-                $feedback .= ' (Bad Gateway - the CData server may be down or unreachable)';
-            } elseif ($http_code == 401) {
-                $feedback .= ' (Unauthorized - check API token)';
-            } elseif ($http_code == 403) {
-                $feedback .= ' (Forbidden - check IP whitelist/VPN)';
-            } elseif ($http_code == 404) {
+        if ($httpcode >= 400) {
+            $feedback = "API Error: HTTP {$httpcode}";
+            if ($httpcode == 502) {
+                $feedback .= ' (Bad Gateway - the CData'
+                    . ' server may be down or unreachable)';
+            } else if ($httpcode == 401) {
+                $feedback .= ' (Unauthorized'
+                    . ' - check API token)';
+            } else if ($httpcode == 403) {
+                $feedback .= ' (Forbidden'
+                    . ' - check IP whitelist/VPN)';
+            } else if ($httpcode == 404) {
                 $feedback .= ' (Not Found - check API URL)';
-            } elseif ($http_code == 500) {
+            } else if ($httpcode == 500) {
                 $feedback .= ' (Internal Server Error)';
             }
-            $feedback .= '<br><small class="text-muted">Response: ' . htmlspecialchars(substr($response, 0, 500)) . '</small>';
-            $feedback_type = 'danger';
+            $responsepreview = htmlspecialchars(
+                substr($response, 0, 500)
+            );
+            $feedback .= '<br><small class="text-muted">'
+                . 'Response: ' . $responsepreview . '</small>';
+            $feedbacktype = 'danger';
         } else {
             $data = json_decode($response, true);
 
-            // Check for JSON decode errors
+            // Check for JSON decode errors.
             if (json_last_error() !== JSON_ERROR_NONE) {
-                $feedback = 'API Error: Invalid JSON response - ' . json_last_error_msg();
-                $feedback .= '<br><small class="text-muted">Response: ' . htmlspecialchars(substr($response, 0, 500)) . '</small>';
-                $feedback_type = 'danger';
+                $feedback = 'API Error: Invalid JSON response'
+                    . ' - ' . json_last_error_msg();
+                $responsepreview = htmlspecialchars(
+                    substr($response, 0, 500)
+                );
+                $feedback .= '<br><small class="text-muted">'
+                    . 'Response: '
+                    . $responsepreview . '</small>';
+                $feedbacktype = 'danger';
                 $data = null;
             }
         }
     }
 }
 
-// Process records to add status information
-$processed_records = [];
+// Process records to add status information.
+$processedrecords = [];
 if (!empty($data['value'])) {
     foreach ($data['value'] as $record) {
         // Skip courses on the ignore list entirely.
@@ -610,38 +796,70 @@ if (!empty($data['value'])) {
             continue;
         }
 
-        $user = $DB->get_record('user', ['idnumber' => $record['GUID']]);
-        $course = $DB->get_record('course', ['idnumber' => (int)$record['COURSE_IDENTIFIER']], 'id, fullname, shortname');
+        $user = $DB->get_record(
+            'user',
+            ['idnumber' => $record['GUID']]
+        );
+        $course = $DB->get_record(
+            'course',
+            ['idnumber' => (int)$record['COURSE_IDENTIFIER']],
+            'id, fullname, shortname'
+        );
 
-        $hash_content = $record['date_created'] . $record['COURSE_IDENTIFIER'] . $record['COURSE_SHORTNAME'] . $record['COURSE_STATE'] . $record['GUID'] . $record['EMAIL'];
-        $hash = hash('sha256', $hash_content);
-        $existing_log = $DB->get_record('local_psaelmsync_logs', ['sha256hash' => $hash], 'id, status', IGNORE_MULTIPLE);
-        $hash_exists = $existing_log && $existing_log->status === 'Success';
+        $hashcontent = $record['date_created']
+            . $record['COURSE_IDENTIFIER']
+            . $record['COURSE_SHORTNAME']
+            . $record['COURSE_STATE']
+            . $record['GUID']
+            . $record['EMAIL'];
+        $hash = hash('sha256', $hashcontent);
+        $existinglog = $DB->get_record(
+            'local_psaelmsync_logs',
+            ['sha256hash' => $hash],
+            'id, status',
+            IGNORE_MULTIPLE
+        );
+        $hashexists = $existinglog
+            && $existinglog->status === 'Success';
 
-        $is_enrolled = false;
+        $isenrolled = false;
         if ($user && $course) {
-            $is_enrolled = check_user_enrolled($record['COURSE_IDENTIFIER'], $user->id);
+            $isenrolled = check_user_enrolled(
+                $record['COURSE_IDENTIFIER'],
+                $user->id
+            );
         }
 
-        $status_info = determine_record_status($record, $user, $course, $hash_exists, $is_enrolled);
+        $statusinfo = determine_record_status(
+            $record,
+            $user,
+            $course,
+            $hashexists,
+            $isenrolled
+        );
 
-        // Apply status filter if set
-        if (!empty($filter_status) && $status_info['status'] !== $filter_status) {
+        // Apply status filter if set.
+        if (
+            !empty($filterstatus)
+            && $statusinfo['status'] !== $filterstatus
+        ) {
             continue;
         }
 
-        $processed_records[] = [
+        $processedrecords[] = [
             'record' => $record,
             'user' => $user,
             'course' => $course,
-            'is_enrolled' => $is_enrolled,
-            'status_info' => $status_info,
-            'hash_exists' => $hash_exists
+            'is_enrolled' => $isenrolled,
+            'status_info' => $statusinfo,
+            'hash_exists' => $hashexists,
         ];
     }
 }
 
 echo $OUTPUT->header();
+// phpcs:disable Generic.WhiteSpace.ScopeIndent
+// phpcs:disable Squiz.WhiteSpace.ScopeClosingBrace
 ?>
 
 <style>
@@ -834,30 +1052,47 @@ echo $OUTPUT->header();
 <nav aria-label="PSA ELM Sync sections">
     <ul class="nav nav-tabs mb-3">
         <li class="nav-item">
-            <a class="nav-link" href="/admin/settings.php?section=local_psaelmsync">Settings</a>
+            <a class="nav-link"
+               href="/admin/settings.php?section=local_psaelmsync">
+                Settings</a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" href="/local/psaelmsync/dashboard.php">Learner Dashboard</a>
+            <a class="nav-link"
+               href="/local/psaelmsync/dashboard.php">
+                Learner Dashboard</a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" href="/local/psaelmsync/dashboard-courses.php">Course Dashboard</a>
+            <a class="nav-link"
+               href="/local/psaelmsync/dashboard-courses.php">
+                Course Dashboard</a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" href="/local/psaelmsync/dashboard-intake.php">Intake Run Dashboard</a>
+            <a class="nav-link"
+               href="/local/psaelmsync/dashboard-intake.php">
+                Intake Run Dashboard</a>
         </li>
         <li class="nav-item">
-            <a class="nav-link active" href="/local/psaelmsync/manual-intake.php" aria-current="page">Manual Intake</a>
+            <a class="nav-link active"
+               href="/local/psaelmsync/manual-intake.php"
+               aria-current="page">Manual Intake</a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" href="/local/psaelmsync/manual-complete.php">Manual Complete</a>
+            <a class="nav-link"
+               href="/local/psaelmsync/manual-complete.php">
+                Manual Complete</a>
         </li>
     </ul>
 </nav>
 
-<?php if (!empty($feedback)): ?>
-<div class="alert alert-<?php echo s($feedback_type); ?> alert-dismissible fade show" role="alert">
-    <?php echo $feedback; // Contains intentional HTML links; user data is escaped at construction ?>
-    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+<?php if (!empty($feedback)) : ?>
+<div class="alert alert-<?php echo s($feedbacktype); ?> alert-dismissible fade show"
+     role="alert">
+    <?php
+    // Contains intentional HTML links; user data is escaped at construction.
+    echo $feedback;
+    ?>
+    <button type="button" class="close"
+            data-dismiss="alert" aria-label="Close">
         <span aria-hidden="true">&times;</span>
     </button>
 </div>
@@ -870,43 +1105,63 @@ echo $OUTPUT->header();
             <div class="col-md-2">
                 <div class="form-group">
                     <label for="from">From Date</label>
-                    <input type="datetime-local" id="from" name="from" class="form-control form-control-sm"
-                           value="<?php echo s($filter_from); ?>">
+                    <input type="datetime-local" id="from"
+                           name="from"
+                           class="form-control form-control-sm"
+                           value="<?php echo s($filterfrom); ?>">
                 </div>
             </div>
             <div class="col-md-2">
                 <div class="form-group">
                     <label for="to">To Date</label>
-                    <input type="datetime-local" id="to" name="to" class="form-control form-control-sm"
-                           value="<?php echo s($filter_to); ?>">
+                    <input type="datetime-local" id="to"
+                           name="to"
+                           class="form-control form-control-sm"
+                           value="<?php echo s($filterto); ?>">
                 </div>
             </div>
             <div class="col-md-2">
                 <div class="form-group">
                     <label for="firstname">First Name</label>
-                    <input type="text" id="firstname" name="firstname" class="form-control form-control-sm"
-                           value="<?php echo s($filter_firstname); ?>" placeholder="Allan">
+                    <input type="text" id="firstname"
+                           name="firstname"
+                           class="form-control form-control-sm"
+                           value="<?php
+                               echo s($filterfirstname);
+                           ?>" placeholder="Allan">
                 </div>
             </div>
             <div class="col-md-2">
                 <div class="form-group">
                     <label for="lastname">Last Name</label>
-                    <input type="text" id="lastname" name="lastname" class="form-control form-control-sm"
-                           value="<?php echo s($filter_lastname); ?>" placeholder="Haggett">
+                    <input type="text" id="lastname"
+                           name="lastname"
+                           class="form-control form-control-sm"
+                           value="<?php
+                               echo s($filterlastname);
+                           ?>" placeholder="Haggett">
                 </div>
             </div>
             <div class="col-md-2">
                 <div class="form-group">
                     <label for="email">Email</label>
-                    <input type="email" id="email" name="email" class="form-control form-control-sm"
-                           value="<?php echo s($filter_email); ?>" placeholder="user@example.com">
+                    <input type="email" id="email"
+                           name="email"
+                           class="form-control form-control-sm"
+                           value="<?php
+                               echo s($filteremail);
+                           ?>" placeholder="user@example.com">
                 </div>
             </div>
             <div class="col-md-2">
                 <div class="form-group">
                     <label for="guid">GUID</label>
-                    <input type="text" id="guid" name="guid" class="form-control form-control-sm"
-                           value="<?php echo s($filter_guid); ?>" placeholder="5F421FC1A510...">
+                    <input type="text" id="guid"
+                           name="guid"
+                           class="form-control form-control-sm"
+                           value="<?php
+                               echo s($filterguid);
+                           ?>" placeholder="5F421FC1A510...">
                 </div>
             </div>
         </div>
@@ -914,141 +1169,233 @@ echo $OUTPUT->header();
             <div class="col-md-2">
                 <div class="form-group">
                     <label for="oprid">OPRID</label>
-                    <input type="text" id="oprid" name="oprid" class="form-control form-control-sm"
-                           value="<?php echo s($filter_oprid); ?>" placeholder="AHAGGETT">
+                    <input type="text" id="oprid"
+                           name="oprid"
+                           class="form-control form-control-sm"
+                           value="<?php
+                               echo s($filteroprid);
+                           ?>" placeholder="AHAGGETT">
                 </div>
             </div>
             <div class="col-md-2">
                 <div class="form-group">
                     <label for="personid">PERSON_ID</label>
-                    <input type="text" id="personid" name="personid" class="form-control form-control-sm"
-                           value="<?php echo s($filter_personid); ?>" placeholder="115000">
+                    <input type="text" id="personid"
+                           name="personid"
+                           class="form-control form-control-sm"
+                           value="<?php
+                               echo s($filterpersonid);
+                           ?>" placeholder="115000">
                 </div>
             </div>
             <div class="col-md-2">
                 <div class="form-group">
                     <label for="course">Course ID/Shortname</label>
-                    <input type="text" id="course" name="course" class="form-control form-control-sm"
-                           value="<?php echo s($filter_course); ?>" placeholder="40972 or ITEM-2625-1">
+                    <input type="text" id="course"
+                           name="course"
+                           class="form-control form-control-sm"
+                           value="<?php
+                               echo s($filtercourse);
+                           ?>" placeholder="40972 or ITEM-2625-1">
                 </div>
             </div>
             <div class="col-md-2">
                 <div class="form-group">
                     <label for="state">CData State</label>
-                    <select id="state" name="state" class="form-control form-control-sm">
+                    <select id="state" name="state"
+                            class="form-control form-control-sm">
                         <option value="">All</option>
-                        <option value="Enrol" <?php echo $filter_state === 'Enrol' ? 'selected' : ''; ?>>Enrol</option>
-                        <option value="Suspend" <?php echo $filter_state === 'Suspend' ? 'selected' : ''; ?>>Suspend</option>
+                        <option value="Enrol" <?php
+                            echo $filterstate === 'Enrol'
+                                ? 'selected' : '';
+                        ?>>Enrol</option>
+                        <option value="Suspend" <?php
+                            echo $filterstate === 'Suspend'
+                                ? 'selected' : '';
+                        ?>>Suspend</option>
                     </select>
                 </div>
             </div>
             <div class="col-md-2">
                 <div class="form-group">
                     <label for="status">Record Status</label>
-                    <select id="status" name="status" class="form-control form-control-sm">
+                    <select id="status" name="status"
+                            class="form-control form-control-sm">
                         <option value="">All</option>
-                        <option value="ready" <?php echo $filter_status === 'ready' ? 'selected' : ''; ?>>Ready to Process</option>
-                        <option value="new_user" <?php echo $filter_status === 'new_user' ? 'selected' : ''; ?>>New User</option>
-                        <option value="mismatch" <?php echo $filter_status === 'mismatch' ? 'selected' : ''; ?>>Email Mismatch</option>
-                        <option value="blocked" <?php echo $filter_status === 'blocked' ? 'selected' : ''; ?>>Blocked</option>
-                        <option value="done" <?php echo $filter_status === 'done' ? 'selected' : ''; ?>>Already Done</option>
+                        <option value="ready" <?php
+                            echo $filterstatus === 'ready'
+                                ? 'selected' : '';
+                        ?>>Ready to Process</option>
+                        <option value="new_user" <?php
+                            echo $filterstatus === 'new_user'
+                                ? 'selected' : '';
+                        ?>>New User</option>
+                        <option value="mismatch" <?php
+                            echo $filterstatus === 'mismatch'
+                                ? 'selected' : '';
+                        ?>>Email Mismatch</option>
+                        <option value="blocked" <?php
+                            echo $filterstatus === 'blocked'
+                                ? 'selected' : '';
+                        ?>>Blocked</option>
+                        <option value="done" <?php
+                            echo $filterstatus === 'done'
+                                ? 'selected' : '';
+                        ?>>Already Done</option>
                     </select>
                 </div>
             </div>
             <div class="col-md-2">
                 <div class="filter-actions">
-                    <button type="submit" class="btn btn-primary btn-sm">Search CData</button>
-                    <a href="<?php echo $PAGE->url; ?>" class="btn btn-secondary btn-sm">Clear</a>
+                    <button type="submit"
+                            class="btn btn-primary btn-sm">
+                        Search CData</button>
+                    <a href="<?php echo $PAGE->url; ?>"
+                       class="btn btn-secondary btn-sm">
+                        Clear</a>
                 </div>
             </div>
         </div>
     </form>
 </div>
 
-<?php if (!empty($apiurlfiltered)): ?>
+<?php if (!empty($apiurlfiltered)) : ?>
 <div class="query-debug">
     <strong>API Query:</strong>
     <code><?php echo htmlspecialchars($apiurlfiltered); ?></code>
-    <a href="<?php echo $apiurlfiltered; ?>" class="btn btn-sm btn-outline-secondary ml-2" target="_blank">Open in browser</a>
-    <small class="text-muted">(VPN + IP whitelist required)</small>
+    <a href="<?php echo $apiurlfiltered; ?>"
+       class="btn btn-sm btn-outline-secondary ml-2"
+       target="_blank">Open in browser</a>
+    <small class="text-muted">
+        (VPN + IP whitelist required)</small>
 </div>
 <?php endif; ?>
 
-<?php if (!empty($processed_records)): ?>
+<?php if (!empty($processedrecords)) : ?>
     <?php
-    // Calculate summary counts
-    $status_counts = ['ready' => 0, 'new_user' => 0, 'mismatch' => 0, 'blocked' => 0, 'done' => 0];
-    $processable_count = 0;
-    foreach ($processed_records as $pr) {
-        $status_counts[$pr['status_info']['status']]++;
+    // Calculate summary counts.
+    $statuscounts = [
+        'ready' => 0,
+        'new_user' => 0,
+        'mismatch' => 0,
+        'blocked' => 0,
+        'done' => 0,
+    ];
+    $processablecount = 0;
+    foreach ($processedrecords as $pr) {
+        $statuscounts[$pr['status_info']['status']]++;
         if ($pr['status_info']['can_process']) {
-            $processable_count++;
+            $processablecount++;
         }
     }
     ?>
 
     <div class="results-summary">
-        <div class="summary-item"><strong><?php echo count($processed_records); ?></strong> records found</div>
-        <?php if ($status_counts['ready'] > 0): ?>
-            <div class="summary-item text-success"><strong><?php echo $status_counts['ready']; ?></strong> ready</div>
+        <div class="summary-item">
+            <strong><?php
+                echo count($processedrecords);
+            ?></strong> records found</div>
+        <?php if ($statuscounts['ready'] > 0) : ?>
+            <div class="summary-item text-success">
+                <strong><?php
+                    echo $statuscounts['ready'];
+                ?></strong> ready</div>
         <?php endif; ?>
-        <?php if ($status_counts['new_user'] > 0): ?>
-            <div class="summary-item text-info"><strong><?php echo $status_counts['new_user']; ?></strong> new users</div>
+        <?php if ($statuscounts['new_user'] > 0) : ?>
+            <div class="summary-item text-info">
+                <strong><?php
+                    echo $statuscounts['new_user'];
+                ?></strong> new users</div>
         <?php endif; ?>
-        <?php if ($status_counts['mismatch'] > 0): ?>
-            <div class="summary-item text-warning"><strong><?php echo $status_counts['mismatch']; ?></strong> mismatches</div>
+        <?php if ($statuscounts['mismatch'] > 0) : ?>
+            <div class="summary-item text-warning">
+                <strong><?php
+                    echo $statuscounts['mismatch'];
+                ?></strong> mismatches</div>
         <?php endif; ?>
-        <?php if ($status_counts['blocked'] > 0): ?>
-            <div class="summary-item text-danger"><strong><?php echo $status_counts['blocked']; ?></strong> blocked</div>
+        <?php if ($statuscounts['blocked'] > 0) : ?>
+            <div class="summary-item text-danger">
+                <strong><?php
+                    echo $statuscounts['blocked'];
+                ?></strong> blocked</div>
         <?php endif; ?>
-        <?php if ($status_counts['done'] > 0): ?>
-            <div class="summary-item text-secondary"><strong><?php echo $status_counts['done']; ?></strong> already done</div>
+        <?php if ($statuscounts['done'] > 0) : ?>
+            <div class="summary-item text-secondary">
+                <strong><?php
+                    echo $statuscounts['done'];
+                ?></strong> already done</div>
         <?php endif; ?>
     </div>
 
-    <?php if ($processable_count > 0): ?>
-    <form method="post" action="<?php echo $PAGE->url; ?>" id="bulk-process-form">
-        <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+    <?php if ($processablecount > 0) : ?>
+    <form method="post"
+          action="<?php echo $PAGE->url; ?>"
+          id="bulk-process-form">
+        <input type="hidden" name="sesskey"
+               value="<?php echo sesskey(); ?>">
 
         <!-- Bulk Action Bar (Top) -->
         <div class="bulk-action-bar mb-2">
-            <button type="submit" name="bulk_process" class="btn btn-success btn-sm">
-                Process Selected (<span class="selected-count"><?php echo $processable_count; ?></span>)
+            <button type="submit" name="bulk_process"
+                    class="btn btn-success btn-sm">
+                Process Selected (<span
+                    class="selected-count"><?php
+                    echo $processablecount;
+                ?></span>)
             </button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="select-all-btn">Select All</button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="select-none-btn">Select None</button>
-            <span class="text-muted ml-2" aria-live="polite"><span class="selected-count"><?php echo $processable_count; ?></span> of <?php echo $processable_count; ?> processable selected</span>
+            <button type="button"
+                    class="btn btn-outline-secondary btn-sm"
+                    id="select-all-btn">Select All</button>
+            <button type="button"
+                    class="btn btn-outline-secondary btn-sm"
+                    id="select-none-btn">Select None</button>
+            <span class="text-muted ml-2"
+                  aria-live="polite">
+                <span class="selected-count"><?php
+                    echo $processablecount;
+                ?></span> of <?php
+                    echo $processablecount;
+                ?> processable selected</span>
         </div>
     <?php endif; ?>
 
     <table class="table table-bordered record-table">
-        <caption class="sr-only">CData enrollment records for processing. Click or press Enter on a row to expand details.</caption>
+        <caption class="sr-only">
+            CData enrollment records for processing.
+            Click or press Enter on a row to expand details.
+        </caption>
         <thead>
             <tr>
-                <?php if ($processable_count > 0): ?>
-                <th scope="col" style="width: 40px;" class="text-center">
-                    <input type="checkbox" id="select-all-checkbox" checked aria-label="Select or deselect all records">
+                <?php if ($processablecount > 0) : ?>
+                <th scope="col" style="width: 40px;"
+                    class="text-center">
+                    <input type="checkbox"
+                           id="select-all-checkbox" checked
+                           aria-label="Select or deselect all records">
                 </th>
                 <?php endif; ?>
-                <th scope="col" style="width: 30px;"><span class="sr-only">Expand row</span></th>
+                <th scope="col" style="width: 30px;">
+                    <span class="sr-only">Expand row</span>
+                </th>
                 <th scope="col">Status</th>
                 <th scope="col">User</th>
                 <th scope="col">Course</th>
                 <th scope="col">CData State</th>
                 <th scope="col">Date Created</th>
-                <th scope="col" style="width: 100px;">Action</th>
+                <th scope="col" style="width: 100px;">
+                    Action</th>
             </tr>
         </thead>
         <tbody>
-        <?php foreach ($processed_records as $index => $pr):
+        <?php foreach ($processedrecords as $index => $pr) :
             $record = $pr['record'];
             $user = $pr['user'];
             $course = $pr['course'];
-            $status_info = $pr['status_info'];
-            $is_enrolled = $pr['is_enrolled'];
+            $statusinfo = $pr['status_info'];
+            $isenrolled = $pr['is_enrolled'];
 
-            // Encode record data for bulk processing
-            $record_data = base64_encode(json_encode([
+            // Encode record data for bulk processing.
+            $recorddata = base64_encode(json_encode([
                 'date_created' => $record['date_created'],
                 'course_state' => $record['COURSE_STATE'],
                 'elm_course_id' => $record['COURSE_IDENTIFIER'],
@@ -1060,243 +1407,618 @@ echo $OUTPUT->header();
                 'last_name' => $record['LAST_NAME'],
                 'oprid' => $record['OPRID'] ?? '',
                 'person_id' => $record['PERSON_ID'] ?? '',
-                'activity_id' => $record['ACTIVITY_ID'] ?? ''
+                'activity_id' => $record['ACTIVITY_ID'] ?? '',
             ]));
+
+            $rowlabel = htmlspecialchars(
+                $record['FIRST_NAME'] . ' '
+                . $record['LAST_NAME'] . ', '
+                . $statusinfo['label']
+            );
         ?>
-            <tr class="record-row" data-index="<?php echo $index; ?>" tabindex="0" role="row" aria-expanded="false" aria-controls="details-<?php echo $index; ?>" aria-label="<?php echo htmlspecialchars($record['FIRST_NAME'] . ' ' . $record['LAST_NAME'] . ', ' . $status_info['label']); ?>. Press Enter to expand.">
-                <?php if ($processable_count > 0): ?>
-                <td class="text-center checkbox-cell" onclick="event.stopPropagation();">
-                    <?php if ($status_info['can_process']): ?>
-                    <input type="checkbox" name="selected_records[]" value="<?php echo $record_data; ?>"
+            <tr class="record-row"
+                data-index="<?php echo $index; ?>"
+                tabindex="0" role="row"
+                aria-expanded="false"
+                aria-controls="details-<?php echo $index; ?>"
+                aria-label="<?php
+                    echo $rowlabel;
+                ?>. Press Enter to expand.">
+                <?php if ($processablecount > 0) : ?>
+                <td class="text-center checkbox-cell"
+                    onclick="event.stopPropagation();">
+                    <?php if ($statusinfo['can_process']) : ?>
+                    <input type="checkbox"
+                           name="selected_records[]"
+                           value="<?php echo $recorddata; ?>"
                            class="record-checkbox" checked>
                     <?php endif; ?>
                 </td>
                 <?php endif; ?>
-                <td class="text-center"><span class="expand-icon" aria-hidden="true">▶</span></td>
+                <td class="text-center">
+                    <span class="expand-icon"
+                          aria-hidden="true">&#9654;</span>
+                </td>
                 <td>
-                    <span class="badge badge-<?php echo $status_info['class']; ?> status-badge">
-                        <?php echo $status_info['icon']; ?> <?php echo $status_info['label']; ?>
+                    <span class="badge badge-<?php
+                        echo $statusinfo['class'];
+                    ?> status-badge">
+                        <?php
+                            echo $statusinfo['icon'];
+                        ?> <?php
+                            echo $statusinfo['label'];
+                        ?>
                     </span>
                 </td>
                 <td>
-                    <?php echo htmlspecialchars($record['FIRST_NAME'] . ' ' . $record['LAST_NAME']); ?>
-                    <br><small class="text-muted"><?php echo htmlspecialchars($record['EMAIL']); ?></small>
+                    <?php
+                    echo htmlspecialchars(
+                        $record['FIRST_NAME']
+                        . ' ' . $record['LAST_NAME']
+                    );
+                    ?>
+                    <br><small class="text-muted"><?php
+                        echo htmlspecialchars($record['EMAIL']);
+                    ?></small>
                 </td>
                 <td>
-                    <?php if ($course): ?>
-                        <a href="/course/view.php?id=<?php echo $course->id; ?>" target="_blank" >
-                            <?php echo htmlspecialchars($course->fullname); ?><span class="sr-only"> (opens in new window)</span>
+                    <?php if ($course) : ?>
+                        <a href="/course/view.php?id=<?php
+                            echo $course->id;
+                        ?>" target="_blank">
+                            <?php
+                            echo htmlspecialchars(
+                                $course->fullname
+                            );
+                            ?><span class="sr-only">
+                                (opens in new window)</span>
                         </a>
-                        <br><small class="text-muted"><?php echo htmlspecialchars($record['COURSE_SHORTNAME']); ?></small>
-                    <?php else: ?>
-                        <span class="text-danger">Not found</span>
-                        <br><small class="text-muted">ID: <?php echo htmlspecialchars($record['COURSE_IDENTIFIER']); ?></small>
+                        <br><small class="text-muted"><?php
+                            echo htmlspecialchars(
+                                $record['COURSE_SHORTNAME']
+                            );
+                        ?></small>
+                    <?php else : ?>
+                        <span class="text-danger">
+                            Not found</span>
+                        <br><small class="text-muted">ID: <?php
+                            echo htmlspecialchars(
+                                $record['COURSE_IDENTIFIER']
+                            );
+                        ?></small>
                     <?php endif; ?>
                 </td>
                 <td>
-                    <span class="badge badge-<?php echo $record['COURSE_STATE'] === 'Enrol' ? 'primary' : 'secondary'; ?>">
-                        <?php echo htmlspecialchars($record['COURSE_STATE']); ?>
+                    <?php
+                    $stateclass = $record['COURSE_STATE'] === 'Enrol'
+                        ? 'primary' : 'secondary';
+                    ?>
+                    <span class="badge badge-<?php
+                        echo $stateclass; ?>">
+                        <?php
+                        echo htmlspecialchars(
+                            $record['COURSE_STATE']
+                        );
+                        ?>
                     </span>
                 </td>
                 <td>
-                    <small><?php echo htmlspecialchars(substr($record['date_created'], 0, 16)); ?></small>
+                    <small><?php
+                        echo htmlspecialchars(
+                            substr($record['date_created'], 0, 16)
+                        );
+                    ?></small>
                 </td>
                 <td>
-                    <?php if ($status_info['can_process']): ?>
-                        <form method="post" action="<?php echo $PAGE->url; ?>" class="d-inline process-form">
-                            <input type="hidden" name="elm_course_id" value="<?php echo htmlspecialchars($record['COURSE_IDENTIFIER']); ?>">
-                            <input type="hidden" name="elm_enrolment_id" value="<?php echo htmlspecialchars($record['ENROLMENT_ID']); ?>">
-                            <input type="hidden" name="record_date_created" value="<?php echo htmlspecialchars($record['date_created']); ?>">
-                            <input type="hidden" name="course_state" value="<?php echo htmlspecialchars($record['COURSE_STATE']); ?>">
-                            <input type="hidden" name="class_code" value="<?php echo htmlspecialchars($record['COURSE_SHORTNAME']); ?>">
-                            <input type="hidden" name="guid" value="<?php echo htmlspecialchars($record['GUID']); ?>">
-                            <input type="hidden" name="email" value="<?php echo htmlspecialchars($record['EMAIL']); ?>">
-                            <input type="hidden" name="first_name" value="<?php echo htmlspecialchars($record['FIRST_NAME']); ?>">
-                            <input type="hidden" name="last_name" value="<?php echo htmlspecialchars($record['LAST_NAME']); ?>">
-                            <input type="hidden" name="oprid" value="<?php echo htmlspecialchars($record['OPRID'] ?? ''); ?>">
-                            <input type="hidden" name="person_id" value="<?php echo htmlspecialchars($record['PERSON_ID'] ?? ''); ?>">
-                            <input type="hidden" name="activity_id" value="<?php echo htmlspecialchars($record['ACTIVITY_ID'] ?? ''); ?>">
-                            <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
-                            <!-- Preserve filter state -->
-                            <input type="hidden" name="from" value="<?php echo s($filter_from); ?>">
-                            <input type="hidden" name="to" value="<?php echo s($filter_to); ?>">
-                            <input type="hidden" name="email_filter" value="<?php echo s($filter_email); ?>">
-                            <input type="hidden" name="guid_filter" value="<?php echo s($filter_guid); ?>">
-                            <input type="hidden" name="course_filter" value="<?php echo s($filter_course); ?>">
-                            <input type="hidden" name="state" value="<?php echo s($filter_state); ?>">
-                            <input type="hidden" name="status" value="<?php echo s($filter_status); ?>">
-                            <button type="submit" name="process" class="btn btn-sm btn-success">
-                                <?php echo $record['COURSE_STATE']; ?>
+                    <?php if ($statusinfo['can_process']) : ?>
+                        <form method="post"
+                              action="<?php echo $PAGE->url; ?>"
+                              class="d-inline process-form">
+                            <input type="hidden"
+                                   name="elm_course_id"
+                                   value="<?php
+                                   echo htmlspecialchars(
+                                       $record['COURSE_IDENTIFIER']
+                                   ); ?>">
+                            <input type="hidden"
+                                   name="elm_enrolment_id"
+                                   value="<?php
+                                   echo htmlspecialchars(
+                                       $record['ENROLMENT_ID']
+                                   ); ?>">
+                            <input type="hidden"
+                                   name="record_date_created"
+                                   value="<?php
+                                   echo htmlspecialchars(
+                                       $record['date_created']
+                                   ); ?>">
+                            <input type="hidden"
+                                   name="course_state"
+                                   value="<?php
+                                   echo htmlspecialchars(
+                                       $record['COURSE_STATE']
+                                   ); ?>">
+                            <input type="hidden"
+                                   name="class_code"
+                                   value="<?php
+                                   echo htmlspecialchars(
+                                       $record['COURSE_SHORTNAME']
+                                   ); ?>">
+                            <input type="hidden"
+                                   name="guid"
+                                   value="<?php
+                                   echo htmlspecialchars(
+                                       $record['GUID']
+                                   ); ?>">
+                            <input type="hidden"
+                                   name="email"
+                                   value="<?php
+                                   echo htmlspecialchars(
+                                       $record['EMAIL']
+                                   ); ?>">
+                            <input type="hidden"
+                                   name="first_name"
+                                   value="<?php
+                                   echo htmlspecialchars(
+                                       $record['FIRST_NAME']
+                                   ); ?>">
+                            <input type="hidden"
+                                   name="last_name"
+                                   value="<?php
+                                   echo htmlspecialchars(
+                                       $record['LAST_NAME']
+                                   ); ?>">
+                            <input type="hidden"
+                                   name="oprid"
+                                   value="<?php
+                                   echo htmlspecialchars(
+                                       $record['OPRID'] ?? ''
+                                   ); ?>">
+                            <input type="hidden"
+                                   name="person_id"
+                                   value="<?php
+                                   echo htmlspecialchars(
+                                       $record['PERSON_ID'] ?? ''
+                                   ); ?>">
+                            <input type="hidden"
+                                   name="activity_id"
+                                   value="<?php
+                                   echo htmlspecialchars(
+                                       $record['ACTIVITY_ID'] ?? ''
+                                   ); ?>">
+                            <input type="hidden" name="sesskey"
+                                   value="<?php
+                                       echo sesskey();
+                                   ?>">
+                            <!-- Preserve filter state. -->
+                            <input type="hidden" name="from"
+                                   value="<?php
+                                       echo s($filterfrom);
+                                   ?>">
+                            <input type="hidden" name="to"
+                                   value="<?php
+                                       echo s($filterto);
+                                   ?>">
+                            <input type="hidden"
+                                   name="email_filter"
+                                   value="<?php
+                                       echo s($filteremail);
+                                   ?>">
+                            <input type="hidden"
+                                   name="guid_filter"
+                                   value="<?php
+                                       echo s($filterguid);
+                                   ?>">
+                            <input type="hidden"
+                                   name="course_filter"
+                                   value="<?php
+                                       echo s($filtercourse);
+                                   ?>">
+                            <input type="hidden" name="state"
+                                   value="<?php
+                                       echo s($filterstate);
+                                   ?>">
+                            <input type="hidden" name="status"
+                                   value="<?php
+                                       echo s($filterstatus);
+                                   ?>">
+                            <button type="submit" name="process"
+                                    class="btn btn-sm btn-success">
+                                <?php
+                                echo $record['COURSE_STATE'];
+                                ?>
                             </button>
                         </form>
-                    <?php else: ?>
-                        <span class="text-muted">—</span>
+                    <?php else : ?>
+                        <span class="text-muted">
+                            &mdash;</span>
                     <?php endif; ?>
                 </td>
             </tr>
-            <tr class="record-details" data-index="<?php echo $index; ?>" id="details-<?php echo $index; ?>">
-                <td colspan="<?php echo $processable_count > 0 ? 8 : 7; ?>">
+            <tr class="record-details"
+                data-index="<?php echo $index; ?>"
+                id="details-<?php echo $index; ?>">
+                <td colspan="<?php
+                    echo $processablecount > 0 ? 8 : 7;
+                ?>">
                     <div class="diff-container">
                         <div class="diff-panel">
                             <h6>CData Record</h6>
                             <div class="diff-row">
-                                <span class="label">Email:</span>
-                                <span class="value"><?php echo htmlspecialchars($record['EMAIL']); ?></span>
+                                <span class="label">
+                                    Email:</span>
+                                <span class="value"><?php
+                                    echo htmlspecialchars(
+                                        $record['EMAIL']
+                                    );
+                                ?></span>
                             </div>
                             <div class="diff-row">
-                                <span class="label">Name:</span>
-                                <span class="value"><?php echo htmlspecialchars($record['FIRST_NAME'] . ' ' . $record['LAST_NAME']); ?></span>
+                                <span class="label">
+                                    Name:</span>
+                                <span class="value"><?php
+                                    echo htmlspecialchars(
+                                        $record['FIRST_NAME']
+                                        . ' '
+                                        . $record['LAST_NAME']
+                                    );
+                                ?></span>
                             </div>
                             <div class="diff-row">
-                                <span class="label">GUID:</span>
-                                <span class="value"><code><?php echo htmlspecialchars($record['GUID']); ?></code></span>
+                                <span class="label">
+                                    GUID:</span>
+                                <span class="value"><code><?php
+                                    echo htmlspecialchars(
+                                        $record['GUID']
+                                    );
+                                ?></code></span>
                             </div>
                             <div class="diff-row">
-                                <span class="label">OPRID:</span>
-                                <span class="value"><?php echo htmlspecialchars($record['OPRID'] ?? '—'); ?></span>
+                                <span class="label">
+                                    OPRID:</span>
+                                <span class="value"><?php
+                                    echo htmlspecialchars(
+                                        $record['OPRID'] ?? '—'
+                                    );
+                                ?></span>
                             </div>
                             <div class="diff-row">
-                                <span class="label">User State:</span>
-                                <?php if($record['USER_STATE'] === 'INACTIVE'): ?>
-                                <span class="badge badge-danger"><?php echo htmlspecialchars($record['USER_STATE'] ?? '—'); ?></span>
-                                <?php else: ?>
-                                <span class="badge badge-success"><?php echo htmlspecialchars($record['USER_STATE'] ?? '—'); ?></span>
+                                <span class="label">
+                                    User State:</span>
+                                <?php
+                                $userstate = $record['USER_STATE'];
+                                if ($userstate === 'INACTIVE') :
+                                ?>
+                                <span class="badge badge-danger">
+                                    <?php
+                                    echo htmlspecialchars(
+                                        $userstate ?? '—'
+                                    );
+                                    ?>
+                                </span>
+                                <?php else : ?>
+                                <span class="badge badge-success">
+                                    <?php
+                                    echo htmlspecialchars(
+                                        $userstate ?? '—'
+                                    );
+                                    ?>
+                                </span>
                                 <?php endif; ?>
                             </div>
                             <hr>
                             <div class="diff-row">
-                                <span class="label">Course ID:</span>
-                                <span class="value"><?php echo htmlspecialchars($record['COURSE_IDENTIFIER']); ?></span>
+                                <span class="label">
+                                    Course ID:</span>
+                                <span class="value"><?php
+                                    echo htmlspecialchars(
+                                        $record['COURSE_IDENTIFIER']
+                                    );
+                                ?></span>
                             </div>
                             <div class="diff-row">
-                                <span class="label">Course Shortname:</span>
-                                <span class="value"><?php echo htmlspecialchars($record['COURSE_SHORTNAME']); ?></span>
+                                <span class="label">
+                                    Course Shortname:</span>
+                                <span class="value"><?php
+                                    echo htmlspecialchars(
+                                        $record['COURSE_SHORTNAME']
+                                    );
+                                ?></span>
                             </div>
                             <div class="diff-row">
-                                <span class="label">Course Name:</span>
-                                <span class="value"><?php echo htmlspecialchars($record['COURSE_LONG_NAME'] ?? '—'); ?></span>
+                                <span class="label">
+                                    Course Name:</span>
+                                <span class="value"><?php
+                                    echo htmlspecialchars(
+                                        $record['COURSE_LONG_NAME']
+                                        ?? '—'
+                                    );
+                                ?></span>
                             </div>
                             <div class="diff-row">
-                                <span class="label">Requested Action:</span>
-                                <span class="value"><strong><?php echo htmlspecialchars($record['COURSE_STATE']); ?></strong></span>
+                                <span class="label">
+                                    Requested Action:</span>
+                                <span class="value">
+                                    <strong><?php
+                                    echo htmlspecialchars(
+                                        $record['COURSE_STATE']
+                                    );
+                                    ?></strong>
+                                </span>
                             </div>
                             <hr>
                             <div class="diff-row">
-                                <span class="label">State Date:</span>
-                                <span class="value"><?php echo htmlspecialchars($record['COURSE_STATE_DATE'] ?? '—'); ?></span>
+                                <span class="label">
+                                    State Date:</span>
+                                <span class="value"><?php
+                                    echo htmlspecialchars(
+                                        $record['COURSE_STATE_DATE']
+                                        ?? '—'
+                                    );
+                                ?></span>
                             </div>
                             <div class="diff-row">
-                                <span class="label">Record Created:</span>
-                                <span class="value"><?php echo htmlspecialchars($record['date_created']); ?></span>
+                                <span class="label">
+                                    Record Created:</span>
+                                <span class="value"><?php
+                                    echo htmlspecialchars(
+                                        $record['date_created']
+                                    );
+                                ?></span>
                             </div>
                             <div class="diff-row">
-                                <span class="label">Enrolment ID:</span>
-                                <span class="value"><?php echo htmlspecialchars($record['ENROLMENT_ID'] ?? '—'); ?></span>
+                                <span class="label">
+                                    Enrolment ID:</span>
+                                <span class="value"><?php
+                                    echo htmlspecialchars(
+                                        $record['ENROLMENT_ID']
+                                        ?? '—'
+                                    );
+                                ?></span>
                             </div>
                         </div>
 
                         <div class="diff-panel">
                             <h6>Moodle State</h6>
-                            <?php if ($user): ?>
+                            <?php if ($user) : ?>
+                                <?php
+                                $emailmatch =
+                                    strtolower($user->email)
+                                    === strtolower(
+                                        $record['EMAIL']
+                                    );
+                                $emailclass = $emailmatch
+                                    ? 'diff-match'
+                                    : 'diff-mismatch';
+                                ?>
                                 <div class="diff-row">
-                                    <span class="label">Email:</span>
-                                    <span class="value <?php echo strtolower($user->email) === strtolower($record['EMAIL']) ? 'diff-match' : 'diff-mismatch'; ?>">
-                                        <?php echo htmlspecialchars($user->email); ?>
-                                        <?php if (strtolower($user->email) === strtolower($record['EMAIL'])): ?>
-                                            <span aria-hidden="true">✓</span><span class="sr-only">Match</span>
-                                        <?php else: ?>
-                                            <span aria-hidden="true">✗</span> MISMATCH
+                                    <span class="label">
+                                        Email:</span>
+                                    <span class="value <?php
+                                        echo $emailclass;
+                                    ?>">
+                                        <?php
+                                        echo htmlspecialchars(
+                                            $user->email
+                                        );
+                                        ?>
+                                        <?php if ($emailmatch) : ?>
+                                            <span
+                                                aria-hidden="true">
+                                                &#10003;</span>
+                                            <span class="sr-only">
+                                                Match</span>
+                                        <?php else : ?>
+                                            <span
+                                                aria-hidden="true">
+                                                &#10007;</span>
+                                            MISMATCH
                                         <?php endif; ?>
                                     </span>
                                 </div>
                                 <div class="diff-row">
-                                    <span class="label">Name:</span>
-                                    <span class="value"><?php echo htmlspecialchars($user->firstname . ' ' . $user->lastname); ?></span>
+                                    <span class="label">
+                                        Name:</span>
+                                    <span class="value"><?php
+                                        echo htmlspecialchars(
+                                            $user->firstname
+                                            . ' '
+                                            . $user->lastname
+                                        );
+                                    ?></span>
                                 </div>
+                                <?php
+                                $guidmatch =
+                                    $user->idnumber
+                                    === $record['GUID'];
+                                $guidclass = $guidmatch
+                                    ? 'diff-match'
+                                    : 'diff-mismatch';
+                                ?>
                                 <div class="diff-row">
-                                    <span class="label">GUID:</span>
-                                    <span class="value <?php echo $user->idnumber === $record['GUID'] ? 'diff-match' : 'diff-mismatch'; ?>">
-                                        <code><?php echo htmlspecialchars($user->idnumber); ?></code>
-                                        <?php if ($user->idnumber === $record['GUID']): ?>
-                                            <span aria-hidden="true">✓</span><span class="sr-only">Match</span>
-                                        <?php else: ?>
-                                            <span aria-hidden="true">✗</span><span class="sr-only">Mismatch</span>
+                                    <span class="label">
+                                        GUID:</span>
+                                    <span class="value <?php
+                                        echo $guidclass;
+                                    ?>">
+                                        <code><?php
+                                            echo htmlspecialchars(
+                                                $user->idnumber
+                                            );
+                                        ?></code>
+                                        <?php if ($guidmatch) : ?>
+                                            <span
+                                                aria-hidden="true">
+                                                &#10003;</span>
+                                            <span class="sr-only">
+                                                Match</span>
+                                        <?php else : ?>
+                                            <span
+                                                aria-hidden="true">
+                                                &#10007;</span>
+                                            <span class="sr-only">
+                                                Mismatch</span>
                                         <?php endif; ?>
                                     </span>
                                 </div>
                                 <div class="diff-row">
-                                    <span class="label">Moodle User ID:</span>
+                                    <span class="label">
+                                        Moodle User ID:</span>
                                     <span class="value">
-                                        <a href="/user/view.php?id=<?php echo $user->id; ?>" target="_blank" ><?php echo $user->id; ?><span class="sr-only"> (opens in new window)</span></a>
+                                        <a href="/user/view.php?id=<?php
+                                            echo $user->id;
+                                        ?>" target="_blank"><?php
+                                            echo $user->id;
+                                        ?><span class="sr-only">
+                                            (opens in new window)
+                                        </span></a>
                                     </span>
                                 </div>
-                            <?php else: ?>
+                            <?php else : ?>
                                 <div class="diff-row">
-                                    <span class="value diff-new">User does not exist — will be created</span>
+                                    <span
+                                        class="value diff-new">
+                                        User does not exist
+                                        &mdash; will be created
+                                    </span>
                                 </div>
                             <?php endif; ?>
 
                             <hr>
 
-                            <?php if ($course): ?>
+                            <?php if ($course) : ?>
                                 <div class="diff-row">
-                                    <span class="label">Course Found:</span>
-                                    <span class="value diff-match">
-                                        <a href="/course/view.php?id=<?php echo $course->id; ?>" target="_blank" >
-                                            <?php echo htmlspecialchars($course->fullname); ?><span class="sr-only"> (opens in new window)</span>
-                                        </a> <span aria-hidden="true">✓</span><span class="sr-only">Course found</span>
+                                    <span class="label">
+                                        Course Found:</span>
+                                    <span
+                                        class="value diff-match">
+                                        <a href="/course/view.php?id=<?php
+                                            echo $course->id;
+                                        ?>" target="_blank">
+                                            <?php
+                                            echo htmlspecialchars(
+                                                $course->fullname
+                                            );
+                                            ?>
+                                            <span class="sr-only">
+                                                (opens in new window)
+                                            </span>
+                                        </a>
+                                        <span
+                                            aria-hidden="true">
+                                            &#10003;</span>
+                                        <span class="sr-only">
+                                            Course found</span>
                                     </span>
                                 </div>
                                 <div class="diff-row">
-                                    <span class="label">Moodle Course ID:</span>
-                                    <span class="value"><?php echo $course->id; ?></span>
+                                    <span class="label">
+                                        Moodle Course ID:</span>
+                                    <span class="value"><?php
+                                        echo $course->id;
+                                    ?></span>
                                 </div>
                                 <div class="diff-row">
-                                    <span class="label">Currently Enrolled:</span>
+                                    <span class="label">
+                                        Currently Enrolled:</span>
                                     <span class="value">
-                                        <?php if ($user): ?>
-                                            <?php echo $is_enrolled ? '<span class="text-success">Yes</span>' : '<span class="text-muted">No</span>'; ?>
-                                            <?php if ($is_enrolled): ?>
-                                                <a href="/user/index.php?id=<?php echo $course->id; ?>" target="_blank"  class="ml-2">(View enrolled users<span class="sr-only"> - opens in new window</span>)</a>
+                                        <?php if ($user) : ?>
+                                            <?php if ($isenrolled) : ?>
+                                                <span
+                                                    class="text-success">
+                                                    Yes</span>
+                                                <a href="/user/index.php?id=<?php
+                                                    echo $course->id;
+                                                ?>" target="_blank"
+                                                   class="ml-2">
+                                                    (View enrolled users
+                                                    <span
+                                                        class="sr-only">
+                                                        - opens in
+                                                        new window
+                                                    </span>)
+                                                </a>
+                                            <?php else : ?>
+                                                <span
+                                                    class="text-muted">
+                                                    No</span>
                                             <?php endif; ?>
-                                        <?php else: ?>
-                                            <span class="text-muted">N/A (user doesn't exist)</span>
+                                        <?php else : ?>
+                                            <span
+                                                class="text-muted">
+                                                N/A (user doesn't
+                                                exist)</span>
                                         <?php endif; ?>
                                     </span>
                                 </div>
-                            <?php else: ?>
+                            <?php else : ?>
                                 <div class="diff-row">
-                                    <span class="value diff-mismatch">Course not found in Moodle ✗</span>
+                                    <span
+                                        class="value diff-mismatch">
+                                        Course not found
+                                        in Moodle &#10007;
+                                    </span>
                                 </div>
                             <?php endif; ?>
 
                             <div class="status-reason">
-                                <strong>Status:</strong> <?php echo $status_info['reason']; ?>
+                                <strong>Status:</strong>
+                                <?php
+                                echo $statusinfo['reason'];
+                                ?>
                             </div>
 
                             <?php
-                            // Show existing logs for this user/course combo
+                            // Show existing logs for this user/course combo.
                             if ($user && $course) {
-                                $logs = $DB->get_records('local_psaelmsync_logs',
-                                    ['elm_course_id' => $record['COURSE_IDENTIFIER'], 'user_id' => $user->id],
+                                $logs = $DB->get_records(
+                                    'local_psaelmsync_logs',
+                                    [
+                                        'elm_course_id' => $record['COURSE_IDENTIFIER'],
+                                        'user_id' => $user->id,
+                                    ],
                                     'timestamp DESC',
                                     'id, timestamp, action, status',
-                                    0, 5);
-                                if (!empty($logs)):
+                                    0,
+                                    5
+                                );
+                                if (!empty($logs)) :
                             ?>
                             <div class="existing-logs">
-                                <h6>Recent Sync Logs (this user + course)</h6>
-                                <?php foreach ($logs as $log): ?>
-                                    <div class="log-entry">
-                                        <?php echo date('Y-m-d H:i', $log->timestamp); ?> —
-                                        <?php echo htmlspecialchars($log->action); ?> —
-                                        <span class="<?php echo $log->status === 'Success' ? 'text-success' : 'text-danger'; ?>">
-                                            <?php echo htmlspecialchars($log->status); ?>
-                                        </span>
-                                    </div>
+                                <h6>Recent Sync Logs
+                                    (this user + course)</h6>
+                                <?php foreach ($logs as $log) : ?>
+                                <div class="log-entry">
+                                    <?php
+                                    echo date(
+                                        'Y-m-d H:i',
+                                        $log->timestamp
+                                    );
+                                    ?> &mdash;
+                                    <?php
+                                    echo htmlspecialchars(
+                                        $log->action
+                                    );
+                                    ?> &mdash;
+                                    <?php
+                                    $logstatusclass =
+                                        $log->status === 'Success'
+                                        ? 'text-success'
+                                        : 'text-danger';
+                                    ?>
+                                    <span class="<?php
+                                        echo $logstatusclass;
+                                    ?>">
+                                        <?php
+                                        echo htmlspecialchars(
+                                            $log->status
+                                        );
+                                        ?>
+                                    </span>
+                                </div>
                                 <?php endforeach; ?>
                             </div>
-                            <?php
+                                    <?php
                                 endif;
                             }
                             ?>
@@ -1304,14 +2026,48 @@ echo $OUTPUT->header();
                     </div>
 
                     <div class="action-buttons">
-                        <?php if ($user): ?>
-                            <a href="/user/view.php?id=<?php echo $user->id; ?>" class="btn btn-sm btn-outline-primary" target="_blank" >View User<span class="sr-only"> (opens in new window)</span></a>
+                        <?php if ($user) : ?>
+                            <a href="/user/view.php?id=<?php
+                                echo $user->id;
+                            ?>"
+                               class="btn btn-sm btn-outline-primary"
+                               target="_blank">
+                                View User<span class="sr-only">
+                                    (opens in new window)
+                                </span></a>
                         <?php endif; ?>
-                        <?php if ($course): ?>
-                            <a href="/course/view.php?id=<?php echo $course->id; ?>" class="btn btn-sm btn-outline-primary" target="_blank" >View Course<span class="sr-only"> (opens in new window)</span></a>
-                            <a href="/user/index.php?id=<?php echo $course->id; ?>" class="btn btn-sm btn-outline-secondary" target="_blank" >Course Participants<span class="sr-only"> (opens in new window)</span></a>
+                        <?php if ($course) : ?>
+                            <a href="/course/view.php?id=<?php
+                                echo $course->id;
+                            ?>"
+                               class="btn btn-sm btn-outline-primary"
+                               target="_blank">
+                                View Course<span class="sr-only">
+                                    (opens in new window)
+                                </span></a>
+                            <a href="/user/index.php?id=<?php
+                                echo $course->id;
+                            ?>"
+                               class="btn btn-sm btn-outline-secondary"
+                               target="_blank">
+                                Course Participants<span
+                                    class="sr-only">
+                                    (opens in new window)
+                                </span></a>
                         <?php endif; ?>
-                        <a href="/local/psaelmsync/dashboard.php?search=<?php echo urlencode($record['GUID']); ?>" class="btn btn-sm btn-outline-secondary" target="_blank" >Search Logs by GUID<span class="sr-only"> (opens in new window)</span></a>
+                        <?php
+                        $guidurl = urlencode($record['GUID']);
+                        $loglink = '/local/psaelmsync/'
+                            . 'dashboard.php?search='
+                            . $guidurl;
+                        ?>
+                        <a href="<?php echo $loglink; ?>"
+                           class="btn btn-sm btn-outline-secondary"
+                           target="_blank">
+                            Search Logs by GUID<span
+                                class="sr-only">
+                                (opens in new window)
+                            </span></a>
                     </div>
                 </td>
             </tr>
@@ -1319,119 +2075,201 @@ echo $OUTPUT->header();
         </tbody>
     </table>
 
-    <?php if ($processable_count > 0): ?>
+    <?php if ($processablecount > 0) : ?>
         <!-- Bulk Action Bar (Bottom) -->
         <div class="bulk-action-bar mt-2">
-            <button type="submit" name="bulk_process" class="btn btn-success btn-sm">
-                Process Selected (<span class="selected-count"><?php echo $processable_count; ?></span>)
+            <button type="submit" name="bulk_process"
+                    class="btn btn-success btn-sm">
+                Process Selected (<span
+                    class="selected-count"><?php
+                    echo $processablecount;
+                ?></span>)
             </button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="select-all-btn-bottom">Select All</button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="select-none-btn-bottom">Select None</button>
-            <span class="text-muted ml-2" aria-live="polite"><span class="selected-count"><?php echo $processable_count; ?></span> of <?php echo $processable_count; ?> processable selected</span>
+            <button type="button"
+                    class="btn btn-outline-secondary btn-sm"
+                    id="select-all-btn-bottom">
+                Select All</button>
+            <button type="button"
+                    class="btn btn-outline-secondary btn-sm"
+                    id="select-none-btn-bottom">
+                Select None</button>
+            <span class="text-muted ml-2"
+                  aria-live="polite">
+                <span class="selected-count"><?php
+                    echo $processablecount;
+                ?></span> of <?php
+                    echo $processablecount;
+                ?> processable selected</span>
         </div>
     </form>
     <?php endif; ?>
 
-<?php elseif (!empty($apiurlfiltered)): ?>
-    <div class="alert alert-info">No records found matching your filters.</div>
-<?php else: ?>
-    <div class="alert alert-secondary">
-        <strong>How to use:</strong> Enter search criteria above to query CData for enrolment records.
-        You can search by email, GUID, course, date range, or any combination.
-        <br><br>
-        <strong>Status meanings:</strong>
-        <ul class="mb-0 mt-2">
-            <li><span class="badge badge-success">Ready</span> — Can be processed immediately</li>
-            <li><span class="badge badge-info">New User</span> — User will be created, then enrolled</li>
-            <li><span class="badge badge-warning">Email Mismatch</span> — Email in CData doesn't match Moodle; needs investigation</li>
-            <li><span class="badge badge-danger">Blocked</span> — Cannot process (usually course not found)</li>
-            <li><span class="badge badge-secondary">Already Done</span> — Already processed or no action needed</li>
-        </ul>
-    </div>
 <?php endif; ?>
+
+<?php
+if (empty($processedrecords) && !empty($apiurlfiltered)) {
+    echo '<div class="alert alert-info">'
+        . 'No records found matching your filters.</div>';
+} else if (empty($processedrecords) && empty($apiurlfiltered)) {
+    echo '<div class="alert alert-secondary">';
+    echo '<strong>How to use:</strong> '
+        . 'Enter search criteria above to query CData for '
+        . 'enrolment records. You can search by email, GUID, '
+        . 'course, date range, or any combination.';
+    echo '<br><br>';
+    echo '<strong>Status meanings:</strong>';
+    echo '<ul class="mb-0 mt-2">';
+    echo '<li>'
+        . '<span class="badge badge-success">Ready</span>'
+        . ' &mdash; Can be processed immediately</li>';
+    echo '<li>'
+        . '<span class="badge badge-info">New User</span>'
+        . ' &mdash; User will be created, then enrolled</li>';
+    echo '<li>'
+        . '<span class="badge badge-warning">'
+        . 'Email Mismatch</span>'
+        . ' &mdash; Email in CData doesn\'t match Moodle;'
+        . ' needs investigation</li>';
+    echo '<li>'
+        . '<span class="badge badge-danger">Blocked</span>'
+        . ' &mdash; Cannot process'
+        . ' (usually course not found)</li>';
+    echo '<li>'
+        . '<span class="badge badge-secondary">'
+        . 'Already Done</span>'
+        . ' &mdash; Already processed or'
+        . ' no action needed</li>';
+    echo '</ul>';
+    echo '</div>';
+}
+?>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Bulk selection functionality
-    var checkboxes = document.querySelectorAll('.record-checkbox');
-    var selectAllCheckbox = document.getElementById('select-all-checkbox');
-    var selectedCountSpans = document.querySelectorAll('.selected-count');
+    // Bulk selection functionality.
+    var checkboxes =
+        document.querySelectorAll('.record-checkbox');
+    var selectAllCheckbox =
+        document.getElementById('select-all-checkbox');
+    var selectedCountSpans =
+        document.querySelectorAll('.selected-count');
 
     function updateSelectedCount() {
-        var count = document.querySelectorAll('.record-checkbox:checked').length;
+        var checked =
+            document.querySelectorAll(
+                '.record-checkbox:checked'
+            );
+        var count = checked.length;
         selectedCountSpans.forEach(function(span) {
             span.textContent = count;
         });
         if (selectAllCheckbox) {
-            selectAllCheckbox.checked = count === checkboxes.length;
-            selectAllCheckbox.indeterminate = count > 0 && count < checkboxes.length;
+            selectAllCheckbox.checked =
+                count === checkboxes.length;
+            selectAllCheckbox.indeterminate =
+                count > 0 && count < checkboxes.length;
         }
     }
 
     function selectAll() {
-        checkboxes.forEach(function(cb) { cb.checked = true; });
+        checkboxes.forEach(function(cb) {
+            cb.checked = true;
+        });
         updateSelectedCount();
     }
 
     function selectNone() {
-        checkboxes.forEach(function(cb) { cb.checked = false; });
+        checkboxes.forEach(function(cb) {
+            cb.checked = false;
+        });
         updateSelectedCount();
     }
 
-    // Select all checkbox in header
+    // Select all checkbox in header.
     if (selectAllCheckbox) {
-        selectAllCheckbox.addEventListener('change', function() {
-            if (this.checked) {
-                selectAll();
-            } else {
-                selectNone();
+        selectAllCheckbox.addEventListener(
+            'change',
+            function() {
+                if (this.checked) {
+                    selectAll();
+                } else {
+                    selectNone();
+                }
             }
-        });
+        );
     }
 
-    // Select All / Select None buttons (top and bottom)
-    ['select-all-btn', 'select-all-btn-bottom'].forEach(function(id) {
+    // Select All / Select None buttons (top and bottom).
+    var allBtnIds = [
+        'select-all-btn',
+        'select-all-btn-bottom'
+    ];
+    allBtnIds.forEach(function(id) {
         var btn = document.getElementById(id);
-        if (btn) btn.addEventListener('click', selectAll);
+        if (btn) {
+            btn.addEventListener('click', selectAll);
+        }
     });
 
-    ['select-none-btn', 'select-none-btn-bottom'].forEach(function(id) {
+    var noneBtnIds = [
+        'select-none-btn',
+        'select-none-btn-bottom'
+    ];
+    noneBtnIds.forEach(function(id) {
         var btn = document.getElementById(id);
-        if (btn) btn.addEventListener('click', selectNone);
+        if (btn) {
+            btn.addEventListener('click', selectNone);
+        }
     });
 
-    // Individual checkbox changes
+    // Individual checkbox changes.
     checkboxes.forEach(function(cb) {
         cb.addEventListener('change', updateSelectedCount);
     });
 
-    // Toggle row expansion
+    // Toggle row expansion.
     function toggleRowExpansion(row) {
         var index = row.dataset.index;
-        var detailsRow = document.querySelector('.record-details[data-index="' + index + '"]');
-        var isExpanded = row.classList.contains('expanded');
+        var selector =
+            '.record-details[data-index="'
+            + index + '"]';
+        var detailsRow =
+            document.querySelector(selector);
+        var isExpanded =
+            row.classList.contains('expanded');
 
         row.classList.toggle('expanded');
         detailsRow.classList.toggle('show');
 
-        // Update ARIA state
-        row.setAttribute('aria-expanded', !isExpanded);
+        // Update ARIA state.
+        row.setAttribute(
+            'aria-expanded',
+            !isExpanded
+        );
     }
 
-    document.querySelectorAll('.record-row').forEach(function(row) {
-        // Click handler
+    var rows =
+        document.querySelectorAll('.record-row');
+    rows.forEach(function(row) {
+        // Click handler.
         row.addEventListener('click', function(e) {
-            // Don't toggle if clicking on the individual process form, link, or checkbox cell
-            if (e.target.closest('.process-form') || e.target.closest('a') || e.target.closest('.checkbox-cell') || e.target.closest('button')) {
+            // Do not toggle if clicking on form, link, or checkbox.
+            if (e.target.closest('.process-form')
+                || e.target.closest('a')
+                || e.target.closest('.checkbox-cell')
+                || e.target.closest('button')) {
                 return;
             }
             toggleRowExpansion(this);
         });
 
-        // Keyboard handler for accessibility
+        // Keyboard handler for accessibility.
         row.addEventListener('keydown', function(e) {
-            // Don't handle if focus is on a form element
-            if (e.target.closest('.process-form') || e.target.closest('a') || e.target.closest('.checkbox-cell') || e.target.closest('button')) {
+            // Do not handle if focus is on a form element.
+            if (e.target.closest('.process-form')
+                || e.target.closest('a')
+                || e.target.closest('.checkbox-cell')
+                || e.target.closest('button')) {
                 return;
             }
 
