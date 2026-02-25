@@ -300,8 +300,8 @@ function process_enrolment_record($record) {
         }
         $message .= '<hr>';
         $message .= 'CData name/GUID ' . $first_name . ' ' . $last_name . ': ' . $user_guid . '<br>';
-        $message .= 'Existing email: <' . $user->email . '>' . '<br>';
-        $message .= 'Email from CData record: <' . $user_email . '><br><br>';
+        $message .= 'Existing email: ' . $user->email . '<br>';
+        $message .= 'Email from CData record: ' . $user_email . '<br><br>';
         $message .= 'Please investigate further.';
 
         // Given that there's a conflict here that needs to be resolved by
