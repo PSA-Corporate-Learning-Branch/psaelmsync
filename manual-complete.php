@@ -44,6 +44,8 @@ $feedback_type = 'info';
 
 /**
  * Get courses that have completion_opt_in enabled.
+ * @param string $search Optional search string to filter courses.
+ * @return array Array of course records.
  */
 function get_completion_courses($search = '') {
     global $DB;
@@ -77,6 +79,9 @@ function get_completion_courses($search = '') {
 
 /**
  * Get users enrolled in a course.
+ * @param int $courseid The Moodle course ID.
+ * @param string $search Optional search string to filter users.
+ * @return array Array of user records.
  */
 function get_enrolled_users_search($courseid, $search = '') {
     global $DB;
@@ -101,6 +106,9 @@ function get_enrolled_users_search($courseid, $search = '') {
 
 /**
  * Check if user has completed the course in Moodle.
+ * @param int $courseid The Moodle course ID.
+ * @param int $userid The Moodle user ID.
+ * @return array Completion status with 'completed' key and optional 'timecompleted'.
  */
 function check_moodle_completion($courseid, $userid) {
     global $DB;
@@ -122,6 +130,9 @@ function check_moodle_completion($courseid, $userid) {
 
 /**
  * Check if completion has been logged/sent to CData (local logs).
+ * @param int|string $elm_course_id The ELM course identifier.
+ * @param int $userid The Moodle user ID.
+ * @return object|null The log record or null if not found.
  */
 function check_completion_logged($elm_course_id, $userid) {
     global $DB;
@@ -141,7 +152,9 @@ function check_completion_logged($elm_course_id, $userid) {
 
 /**
  * Query CData API to check completion status.
- * Returns array with 'success', 'error', 'data', 'http_code' keys.
+ * @param string $guid The user GUID.
+ * @param int|string $elm_course_id The ELM course identifier.
+ * @return array Array with 'success', 'error', 'data', 'http_code' keys.
  */
 function check_cdata_completion($guid, $elm_course_id) {
     $apiurl = get_config('local_psaelmsync', 'completion_apiurl');
@@ -238,6 +251,9 @@ function check_cdata_completion($guid, $elm_course_id) {
 
 /**
  * Get the enrolment record from logs (needed for completion POST).
+ * @param int|string $elm_course_id The ELM course identifier.
+ * @param int $userid The Moodle user ID.
+ * @return object|null The enrolment log record or null if not found.
  */
 function get_enrolment_record($elm_course_id, $userid) {
     global $DB;
@@ -258,6 +274,10 @@ function get_enrolment_record($elm_course_id, $userid) {
 
 /**
  * Post completion to CData API.
+ * @param object $user The Moodle user object.
+ * @param object $course The Moodle course object.
+ * @param object $enrolment_record The enrolment log record from local_psaelmsync_logs.
+ * @return array Array with 'success', 'error', 'http_code' keys.
  */
 function post_completion_to_cdata($user, $course, $enrolment_record) {
     global $DB;

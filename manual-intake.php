@@ -49,6 +49,12 @@ $apiurlfiltered = '';
 
 /**
  * Determine the status category for a record based on Moodle state comparison.
+ * @param array $record The CData enrolment record.
+ * @param object|false $user The Moodle user object or false if not found.
+ * @param object|false $course The Moodle course object or false if not found.
+ * @param bool $hash_exists Whether a successful log entry already exists for this record.
+ * @param bool $is_enrolled Whether the user is currently enrolled in the course.
+ * @return array Status info with 'status', 'label', 'icon', 'class', 'can_process', 'reason' keys.
  */
 function determine_record_status($record, $user, $course, $hash_exists, $is_enrolled) {
     // Already processed successfully
@@ -135,6 +141,9 @@ function determine_record_status($record, $user, $course, $hash_exists, $is_enro
 
 /**
  * Check if user is enrolled in course by idnumber.
+ * @param int|string $courseidnumber The course idnumber (ELM course ID).
+ * @param int $userid The Moodle user ID.
+ * @return bool True if the user is actively enrolled.
  */
 function check_user_enrolled($courseidnumber, $userid) {
     global $DB;
@@ -155,6 +164,11 @@ function check_user_enrolled($courseidnumber, $userid) {
 
 /**
  * Create a new user (local helper matching lib.php pattern).
+ * @param string $user_email The user's email address.
+ * @param string $first_name The user's first name.
+ * @param string $last_name The user's last name.
+ * @param string $user_guid The user's GUID (stored as idnumber).
+ * @return object The created user object.
  */
 function create_new_user_local($user_email, $first_name, $last_name, $user_guid) {
     global $DB;
