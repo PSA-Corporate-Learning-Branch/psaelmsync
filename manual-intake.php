@@ -74,7 +74,7 @@ $apiurlfiltered = '';
  * @param array $record The CData enrolment record.
  * @param object|false $user The Moodle user object or false if not found.
  * @param object|false $course The Moodle course object or false if not found.
- * @param bool $hashexists Whether a successful log entry already exists.
+ * @param bool $alreadyprocessed Whether a successful log entry already exists.
  * @param bool $isenrolled Whether the user is currently enrolled.
  * @return array Status info with status, label, icon, class, can_process, reason keys.
  */
