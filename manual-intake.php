@@ -247,168 +247,119 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
             . s($elmcourseid)
             . " is on the ignore list and will not be processed.";
         $feedbacktype = 'warning';
-    } else if ($recordenrolid > 0 && $DB->record_exists_select(
-        'local_psaelmsync_logs',
-        "record_enrol_id = :rid AND status = 'Success'",
-        ['rid' => $recordenrolid]
-    )) {
+    } else if (
+        $recordenrolid > 0 && $DB->record_exists_select(
+            'local_psaelmsync_logs',
+            "record_enrol_id = :rid AND status = 'Success'",
+            ['rid' => $recordenrolid]
+        )
+    ) {
         $feedback = 'This record has already been processed.';
         $feedbacktype = 'warning';
     } else {
-            $course = $DB->get_record(
-                'course',
-                ['idnumber' => $elmcourseid]
+        $course = $DB->get_record(
+            'course',
+            ['idnumber' => $elmcourseid]
+        );
+
+        if (!$course) {
+            $feedback = "Course with ELM ID "
+                . s($elmcourseid) . " not found in Moodle.";
+            $feedbacktype = 'danger';
+        } else {
+            $user = $DB->get_record(
+                'user',
+                ['idnumber' => $userguid]
             );
 
-            if (!$course) {
-                $feedback = "Course with ELM ID "
-                    . s($elmcourseid) . " not found in Moodle.";
-                $feedbacktype = 'danger';
-            } else {
-                $user = $DB->get_record(
-                    'user',
-                    ['idnumber' => $userguid]
+            if (!$user) {
+                $user = create_new_user_local(
+                    $useremail,
+                    $firstname,
+                    $lastname,
+                    $userguid
                 );
 
                 if (!$user) {
-                    $user = create_new_user_local(
-                        $useremail,
-                        $firstname,
-                        $lastname,
-                        $userguid
+                    $useremailcheck = $DB->get_record(
+                        'user',
+                        ['email' => $useremail]
                     );
-
-                    if (!$user) {
-                        $useremailcheck = $DB->get_record(
-                            'user',
-                            ['email' => $useremail]
-                        );
-                        if ($useremailcheck) {
-                            $feedback = "Failed to create user."
-                                . " An account with email "
-                                . s($useremail)
-                                . " already exists. ";
-                            $feedback .= "<a href='/user/view.php?id="
-                                . $useremailcheck->id
-                                . "' target='_blank'>"
-                                . "View existing account</a>";
-                        } else {
-                            $feedback = "Failed to create a new"
-                                . " user for GUID "
-                                . s($userguid) . ".";
-                        }
-                        $feedbacktype = 'danger';
-                    }
-                }
-
-                if ($user) {
-                    // Check for email mismatch.
-                    if (strtolower($user->email) !== strtolower($useremail)) {
-                        $feedback = "Email mismatch: Moodle has '"
-                            . s($user->email) . "' but CData has '"
-                            . s($useremail) . "'. ";
-                        $useremailcheck = $DB->get_record(
-                            'user',
-                            ['email' => $useremail]
-                        );
-                        if ($useremailcheck) {
-                            $feedback .= "Another account exists"
-                                . " with the CData email: ";
-                            $feedback .= "<a href='/user/view.php?id="
-                                . $useremailcheck->id
-                                . "' target='_blank'>"
-                                . "View account</a>";
-                        }
-                        $feedbacktype = 'danger';
+                    if ($useremailcheck) {
+                        $feedback = "Failed to create user."
+                            . " An account with email "
+                            . s($useremail)
+                            . " already exists. ";
+                        $feedback .= "<a href='/user/view.php?id="
+                            . $useremailcheck->id
+                            . "' target='_blank'>"
+                            . "View existing account</a>";
                     } else {
-                        $manualenrol = enrol_get_plugin('manual');
-                        $enrolinstances = enrol_get_instances(
-                            $course->id,
-                            true
-                        );
-                        $manualinstance = null;
+                        $feedback = "Failed to create a new"
+                            . " user for GUID "
+                            . s($userguid) . ".";
+                    }
+                    $feedbacktype = 'danger';
+                }
+            }
 
-                        foreach ($enrolinstances as $instance) {
-                            if ($instance->enrol === 'manual') {
-                                $manualinstance = $instance;
-                                break;
-                            }
+            if ($user) {
+                // Check for email mismatch.
+                if (strtolower($user->email) !== strtolower($useremail)) {
+                    $feedback = "Email mismatch: Moodle has '"
+                        . s($user->email) . "' but CData has '"
+                        . s($useremail) . "'. ";
+                    $useremailcheck = $DB->get_record(
+                        'user',
+                        ['email' => $useremail]
+                    );
+                    if ($useremailcheck) {
+                        $feedback .= "Another account exists"
+                            . " with the CData email: ";
+                        $feedback .= "<a href='/user/view.php?id="
+                            . $useremailcheck->id
+                            . "' target='_blank'>"
+                            . "View account</a>";
+                    }
+                    $feedbacktype = 'danger';
+                } else {
+                    $manualenrol = enrol_get_plugin('manual');
+                    $enrolinstances = enrol_get_instances(
+                        $course->id,
+                        true
+                    );
+                    $manualinstance = null;
+
+                    foreach ($enrolinstances as $instance) {
+                        if ($instance->enrol === 'manual') {
+                            $manualinstance = $instance;
+                            break;
                         }
+                    }
 
-                        if (
-                            $manualinstance
-                            && !empty($manualinstance->roleid)
-                        ) {
-                            if ($coursestate === 'Enrol') {
-                                $manualenrol->enrol_user(
-                                    $manualinstance,
-                                    $user->id,
-                                    $manualinstance->roleid,
-                                    0,
-                                    0,
-                                    ENROL_USER_ACTIVE
-                                );
+                    if (
+                        $manualinstance
+                        && !empty($manualinstance->roleid)
+                    ) {
+                        if ($coursestate === 'Enrol') {
+                            $manualenrol->enrol_user(
+                                $manualinstance,
+                                $user->id,
+                                $manualinstance->roleid,
+                                0,
+                                0,
+                                ENROL_USER_ACTIVE
+                            );
 
-                                $isenrolled = $DB->record_exists(
-                                    'user_enrolments',
-                                    [
-                                        'userid' => $user->id,
-                                        'enrolid' => $manualinstance->id,
-                                    ]
-                                );
+                            $isenrolled = $DB->record_exists(
+                                'user_enrolments',
+                                [
+                                    'userid' => $user->id,
+                                    'enrolid' => $manualinstance->id,
+                                ]
+                            );
 
-                                if ($isenrolled) {
-                                    $log = new stdClass();
-                                    $log->record_id = time();
-                                    $log->sha256hash = $hash;
-                                    $log->record_date_created =
-                                        $recorddatecreated;
-                                    $log->course_id = $course->id;
-                                    $log->elm_course_id = $elmcourseid;
-                                    $log->class_code = $classcode;
-                                    $log->course_name = $course->fullname;
-                                    $log->user_id = $user->id;
-                                    $log->user_firstname =
-                                        $user->firstname;
-                                    $log->user_lastname =
-                                        $user->lastname;
-                                    $log->user_guid = $user->idnumber;
-                                    $log->user_email = $user->email;
-                                    $log->elm_enrolment_id =
-                                        $elmenrolmentid;
-                                    $log->record_enrol_id =
-                                        $recordenrolid;
-                                    $log->oprid = $oprid;
-                                    $log->person_id = $personid;
-                                    $log->activity_id = $activityid;
-                                    $log->action = 'Manual Enrol';
-                                    $log->status = 'Success';
-                                    $log->timestamp = time();
-
-                                    $DB->insert_record(
-                                        'local_psaelmsync_logs',
-                                        $log
-                                    );
-
-                                    $feedback = "Successfully enrolled "
-                                        . s($user->email) . " in "
-                                        . s($course->fullname) . ".";
-                                    $feedbacktype = 'success';
-
-                                    send_welcome_email($user, $course);
-                                } else {
-                                    $feedback = "Failed to enrol "
-                                        . s($user->email)
-                                        . " in the course.";
-                                    $feedbacktype = 'danger';
-                                }
-                            } else if ($coursestate === 'Suspend') {
-                                $manualenrol->update_user_enrol(
-                                    $manualinstance,
-                                    $user->id,
-                                    ENROL_USER_SUSPENDED
-                                );
-
+                            if ($isenrolled) {
                                 $log = new stdClass();
                                 $log->record_id = time();
                                 $log->sha256hash = $hash;
@@ -432,7 +383,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
                                 $log->oprid = $oprid;
                                 $log->person_id = $personid;
                                 $log->activity_id = $activityid;
-                                $log->action = 'Manual Suspend';
+                                $log->action = 'Manual Enrol';
                                 $log->status = 'Success';
                                 $log->timestamp = time();
 
@@ -441,25 +392,76 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
                                     $log
                                 );
 
-                                $feedback = "Successfully suspended "
-                                    . s($user->email) . " from "
+                                $feedback = "Successfully enrolled "
+                                    . s($user->email) . " in "
                                     . s($course->fullname) . ".";
                                 $feedbacktype = 'success';
+
+                                send_welcome_email($user, $course);
                             } else {
-                                $feedback = "Invalid course state: "
-                                    . s($coursestate);
+                                $feedback = "Failed to enrol "
+                                    . s($user->email)
+                                    . " in the course.";
                                 $feedbacktype = 'danger';
                             }
+                        } else if ($coursestate === 'Suspend') {
+                            $manualenrol->update_user_enrol(
+                                $manualinstance,
+                                $user->id,
+                                ENROL_USER_SUSPENDED
+                            );
+
+                            $log = new stdClass();
+                            $log->record_id = time();
+                            $log->sha256hash = $hash;
+                            $log->record_date_created =
+                                $recorddatecreated;
+                            $log->course_id = $course->id;
+                            $log->elm_course_id = $elmcourseid;
+                            $log->class_code = $classcode;
+                            $log->course_name = $course->fullname;
+                            $log->user_id = $user->id;
+                            $log->user_firstname =
+                                $user->firstname;
+                            $log->user_lastname =
+                                $user->lastname;
+                            $log->user_guid = $user->idnumber;
+                            $log->user_email = $user->email;
+                            $log->elm_enrolment_id =
+                                $elmenrolmentid;
+                            $log->record_enrol_id =
+                                $recordenrolid;
+                            $log->oprid = $oprid;
+                            $log->person_id = $personid;
+                            $log->activity_id = $activityid;
+                            $log->action = 'Manual Suspend';
+                            $log->status = 'Success';
+                            $log->timestamp = time();
+
+                            $DB->insert_record(
+                                'local_psaelmsync_logs',
+                                $log
+                            );
+
+                            $feedback = "Successfully suspended "
+                                . s($user->email) . " from "
+                                . s($course->fullname) . ".";
+                            $feedbacktype = 'success';
                         } else {
-                            $feedback = "No manual enrolment instance"
-                                . " found for this course.";
+                            $feedback = "Invalid course state: "
+                                . s($coursestate);
                             $feedbacktype = 'danger';
                         }
+                    } else {
+                        $feedback = "No manual enrolment instance"
+                            . " found for this course.";
+                        $feedbacktype = 'danger';
                     }
                 }
             }
         }
     }
+}
 
 // Handle bulk processing.
 if (
