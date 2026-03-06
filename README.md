@@ -12,7 +12,7 @@ A Moodle local plugin that synchronizes course enrollment data between an extern
 - **Enrollment Intake:** Processes enrollment and suspension records from CData API
 - **User Provisioning:** Automatically creates new users when they don't exist in Moodle
 - **Completion Reporting:** Sends course completion data back to ELM when learners complete courses
-- **Deduplication:** SHA256 hash-based deduplication prevents reprocessing identical records
+- **High-Water Mark Tracking:** Uses sequential `record_enrol_id` from the API to only fetch new records each run
 - **Admin Dashboards:** Searchable interfaces for monitoring all sync operations
 - **Error Notifications:** Emails administrators when problems occur
 - **Feed Monitoring:** Detects and alerts when the enrollment feed appears blocked
@@ -32,7 +32,6 @@ Navigate to **Site Administration → Plugins → Local plugins → PSALS Sync**
 | **Enabled** | Enable/disable the sync scheduled task |
 | **API URL** | CData endpoint URL for enrollment intake |
 | **API Token** | Base64-encoded authentication token for intake API |
-| **Date Filter Minutes** | Lookback window for API queries (default: 120 minutes) |
 | **Completion API URL** | CData endpoint URL for posting completion data |
 | **Completion API Token** | Authentication token for completion API |
 | **Notification Emails** | Comma-separated admin emails for error alerts |
@@ -44,15 +43,16 @@ Navigate to **Site Administration → Plugins → Local plugins → PSALS Sync**
 
 The scheduled task runs every 10 minutes during business hours (6 AM - 6 PM weekdays):
 
-1. Fetches records from CData API using a rolling time window
-2. For each record:
-   - Generates SHA256 hash for deduplication
+1. Reads the last processed `record_enrol_id` from plugin config (high-water mark)
+2. Fetches only new records from CData API where `record_enrol_id > last_processed`
+3. For each record:
    - Looks up course by `idnumber` (ELM course ID)
    - Looks up user by `idnumber` (GUID)
    - Creates user if not found (using OAuth2 auth)
    - Enrolls or suspends user in course
    - Sends welcome email for new enrollments
-   - Logs the result
+   - Logs the result with `record_enrol_id`
+4. Updates the high-water mark to the highest `record_enrol_id` seen in the batch
 
 ### Completion Reporting
 
@@ -95,8 +95,8 @@ Comprehensive log of every enrollment, suspension, and completion attempt.
 
 | Field | Description |
 |-------|-------------|
-| sha256hash | Deduplication hash |
-| record_id | Unique record ID from CData |
+| sha256hash | Legacy deduplication hash (retained for auditing) |
+| record_id | Generated record ID |
 | record_date_created | ISO8601 timestamp from CData |
 | course_id | Moodle course ID |
 | elm_course_id | External ELM course ID |
@@ -107,6 +107,7 @@ Comprehensive log of every enrollment, suspension, and completion attempt.
 | user_guid | External user identifier |
 | user_email | User email |
 | elm_enrolment_id | ELM enrollment record ID |
+| record_enrol_id | Sequential API record ID (used for high-water mark) |
 | action | Enrol, Suspend, Complete, or Imported |
 | status | Success or Error |
 | timestamp | Unix timestamp of processing |
@@ -123,7 +124,7 @@ Summary statistics for each sync run.
 | enrolcount | Successful enrollments |
 | suspendcount | Successful suspensions |
 | errorcount | Failed operations |
-| skippedcount | Duplicates skipped |
+| skippedcount | Records skipped (e.g. ignored courses) |
 
 ## Capabilities
 
@@ -165,7 +166,8 @@ This occurs when a GUID exists in Moodle but with a different email than what EL
 
 ## Version History
 
-- **1.4** - Current stable release
+- **1.5** - Replace rolling window and hash dedup with high-water mark pattern using `record_enrol_id`
+- **1.4** - Previous stable release
 - Initial deployment: September 3, 2024
 - Historical import: ~8,400 existing enrollments imported September 4, 2024 with action "Imported"
 

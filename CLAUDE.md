@@ -39,12 +39,12 @@ php /path/to/moodle/admin/cli/scheduled_task.php --execute=\\local_psaelmsync\\t
 
 ### Database Tables
 
-- `local_psaelmsync_logs` - Log of every enrollment/suspension/completion with SHA256 deduplication hash
+- `local_psaelmsync_logs` - Log of every enrollment/suspension/completion with `record_enrol_id` for high-water mark tracking
 - `local_psaelmsync_runs` - Summary statistics for each sync run
 
 ### Key Workflows
 
-1. **Enrollment Intake:** Fetch from CData API → deduplicate by hash → lookup/create user → enroll/suspend → send welcome email → log result
+1. **Enrollment Intake:** Read high-water mark → fetch new records from CData API (record_enrol_id > last) → lookup/create user → enroll/suspend → send welcome email → log result → update high-water mark
 2. **Completion Reporting:** Course completed event → check completion_opt_in field → find enrolment record → POST to completion API → log result
 
 ### Admin Dashboards
@@ -58,12 +58,12 @@ php /path/to/moodle/admin/cli/scheduled_task.php --execute=\\local_psaelmsync\\t
 Admin settings at `/admin/settings.php?section=local_psaelmsync`:
 - `apiurl` / `apitoken` - CData enrollment intake endpoint
 - `completion_apiurl` / `completion_apitoken` - CData completion endpoint
-- `datefilterminutes` - Lookback window for API queries (default: 120)
 - `notificationemails` - Admin emails for error alerts
+- `last_record_enrol_id` - High-water mark (auto-managed, not in admin UI)
 
 ## Important Conventions
 
-- **Deduplication:** SHA256 hash of (date_created + course_id + status + user_guid + email) prevents reprocessing
+- **High-water mark:** Uses `record_enrol_id` (sequential API field) stored in plugin config to only fetch new records; SHA256 hash still computed and stored for transition auditing but no longer queried
 - **User lookup:** Users matched by GUID stored in `user.idnumber`
 - **Course lookup:** Courses matched by ELM course ID stored in `course.idnumber`
 - **User creation:** Uses OAuth2 authentication (`auth = 'oauth2'`)
