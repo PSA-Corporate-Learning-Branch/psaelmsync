@@ -30,7 +30,7 @@ No more remembering to adjust `datefilterminutes` after downtime. System goes do
 
 ### 2. Eliminates the per-record hash lookup
 
-This is the biggest performance win. Currently every record in the feed hits the DB for a hash check (`lib.php:217-222`). That's a `SELECT` query per record returned by the rolling window -- which could be hundreds or thousands depending on the window size and activity. The high-water mark replaces all of them with a single config read at the start of each run.
+This is the biggest performance win. Currently every record in the feed hits the DB for a hash check (`lib.php:217-222`). That's a `SELECT` query per record returned by the rolling window -- which could be hundreds or thousands depending on the window size and activity. The high-water mark replaces all of them with a single config read at the start of each run and a config write at the end.
 
 ### 3. API returns only new records
 
