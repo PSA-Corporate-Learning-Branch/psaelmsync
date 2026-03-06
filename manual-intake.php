@@ -511,11 +511,13 @@ if (
         }
 
         // Skip already processed records.
-        if ($recordenrolid > 0 && $DB->record_exists_select(
-            'local_psaelmsync_logs',
-            "record_enrol_id = :rid AND status = 'Success'",
-            ['rid' => $recordenrolid]
-        )) {
+        if (
+            $recordenrolid > 0 && $DB->record_exists_select(
+                'local_psaelmsync_logs',
+                "record_enrol_id = :rid AND status = 'Success'",
+                ['rid' => $recordenrolid]
+            )
+        ) {
             continue;
         }
 
