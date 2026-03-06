@@ -59,14 +59,6 @@ if ($hassiteconfig) {
     ));
 
     $settings->add(new admin_setting_configtext(
-        'local_psaelmsync/datefilterminutes',
-        get_string('datefilterminutes', 'local_psaelmsync'),
-        get_string('datefilterminutes_desc', 'local_psaelmsync'),
-        120,
-        PARAM_INT,
-    ));
-
-    $settings->add(new admin_setting_configtext(
         'local_psaelmsync/notificationhours',
         get_string('notificationhours', 'local_psaelmsync'),
         get_string('notificationhours_desc', 'local_psaelmsync'),

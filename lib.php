@@ -66,22 +66,22 @@ function local_psaelmsync_sync() {
     // Fetch API URL and token from config.
     $apiurl = get_config('local_psaelmsync', 'apiurl');
     $apitoken = get_config('local_psaelmsync', 'apitoken');
-    $datefilter = get_config('local_psaelmsync', 'datefilterminutes');
     $notificationhours = get_config('local_psaelmsync', 'notificationhours');
 
     if (!$apiurl || !$apitoken) {
         mtrace('PSA Enrol Sync: API URL or Token not set.');
         return;
     }
-    // Setup API URL with a date filter that only pulls in records from N minutes ago.
-    $mins = '-' . $datefilter . ' minutes';
-    $timeminusmins = date('Y-m-d H:i:s', strtotime($mins));
-    $encodedtime = urlencode($timeminusmins);
+
+    // High-water mark: only fetch records newer than the last one we processed.
+    $lastrecordenrolid = get_config('local_psaelmsync', 'last_record_enrol_id');
+    if ($lastrecordenrolid === false) {
+        $lastrecordenrolid = 0;
+    }
     $apiurlfiltered = $apiurl
-        . '?%24orderby=COURSE_STATE_DATE,date_created+asc';
-    $apiurlfiltered .= '&%24filter=date_created+gt+%27'
-        . $encodedtime
-        . '%27+and+USER_STATE+eq+%27ACTIVE%27';
+        . '?%24orderby=record_enrol_id+asc'
+        . '&%24filter=record_enrol_id+gt+' . (int)$lastrecordenrolid
+        . '+and+USER_STATE+eq+%27ACTIVE%27';
 
     // Make API call.
     $options = [
@@ -115,13 +115,24 @@ function local_psaelmsync_sync() {
     $suspendcount = 0;
     $errorcount = 0;
     $skippedcount = 0;
+    $maxrecordenrolid = (int)$lastrecordenrolid;
 
     // This is the primary loop where we start to look at each record.
     foreach ($data['value'] as $record) {
         $recordcount++;
+        // Track the highest record_enrol_id seen in this batch.
+        $recordenrolid = (int)($record['record_enrol_id'] ?? 0);
+        if ($recordenrolid > $maxrecordenrolid) {
+            $maxrecordenrolid = $recordenrolid;
+        }
         // Process each record and return the enrolment type for logging.
         $action = process_enrolment_record($record);
         $typecounts[] = $action;
+    }
+
+    // Update the high-water mark so the next run starts after this batch.
+    if ($maxrecordenrolid > (int)$lastrecordenrolid) {
+        set_config('last_record_enrol_id', $maxrecordenrolid, 'local_psaelmsync');
     }
 
     // Loop through to pull out how many enrols and drops etc. respectively.
@@ -163,8 +174,8 @@ function local_psaelmsync_sync() {
 /**
  * Process a single enrolment record from the CData API response.
  *
- * Deduplicates by SHA256 hash, looks up or creates the user, enrols or
- * suspends in the matching Moodle course, and logs the outcome.
+ * Looks up or creates the user, enrols or suspends in the matching
+ * Moodle course, and logs the outcome.
  *
  * @param array $record A single enrolment record from the CData API.
  * @return string The action taken: Enrol, Suspend, Error, or Skipped.
@@ -173,13 +184,9 @@ function process_enrolment_record($record) {
 
     global $DB;
 
-    // CData does not currently supply a unique record ID yet, so we generate one.
-    // Value is in milliseconds.
     $recordid = floor(microtime(true) * 1000);
-    // In current state the plan is to use the USER_STATE field to hold the
-    // enrolment ID. At some point hopefully we will get away from the spaghetti
-    // that is our field mapping. In the meantime, we are just faking an ID.
     $enrolmentid = (int) $record['ENROLMENT_ID'];
+    $recordenrolid = (int) ($record['record_enrol_id'] ?? 0);
     // The rest map to CData fields.
     $recorddatecreated = $record['date_created'];
     $elmcourseid = (int) $record['COURSE_IDENTIFIER'];
@@ -200,33 +207,10 @@ function process_enrolment_record($record) {
     $userpersonid = $record['PERSON_ID'];
     $courselongname = $record['COURSE_LONG_NAME'];
 
-    // We need to create a unique ID here by hashing the relevant info.
-    // When we have access to them, we will want to include enrolment ID and
-    // record ID in this hash for extra uniqueness but right now we are
-    // dynamically generating them which would break this, so just leaving
-    // it out for the time being. The data included does a good enough job
-    // for now. Two identical records coming through is enough of an edge
-    // case and would not really have an adverse effect anyhow.
+    // Compute hash for transition auditing (stored but no longer queried).
     $hashcontent = $recorddatecreated . $elmcourseid
         . $classcode . $enrolmentstatus . $userguid . $useremail;
     $hash = hash('sha256', $hashcontent);
-    // This is the expensive part of doing it this way where we touch the
-    // database for every single record in the feed, but it is probably the
-    // least expensive but verifiable method that we can come up with;
-    // certainly less expensive than updating each record with a callback.
-    $hashcheck = $DB->get_record(
-        'local_psaelmsync_logs',
-        ['sha256hash' => $hash],
-        '*',
-        IGNORE_MULTIPLE
-    );
-
-    // Does the hash exist in the table? If so we want to skip this record
-    // as we have already processed it, but still counting it as we go.
-    if ($hashcheck) {
-        $s = 'Skipped';
-        return $s;
-    }
 
     // If there is no course with this IDNumber (note: not the Moodle course
     // ID but ELM's course ID), skip record. We want to log that this is
@@ -251,7 +235,8 @@ function process_enrolment_record($record) {
             $userpersonid,
             $useractivityid,
             'Course not found',
-            'Error'
+            'Error',
+            $recordenrolid
         );
         // Send the email notification.
         send_failure_notification(
@@ -314,7 +299,8 @@ function process_enrolment_record($record) {
                 $userpersonid,
                 $useractivityid,
                 'User create failure',
-                'Error'
+                'Error',
+                $recordenrolid
             );
 
             // Send an email notification.
@@ -415,7 +401,8 @@ function process_enrolment_record($record) {
             $userpersonid,
             $useractivityid,
             'Email Mistatch',
-            'Error'
+            'Error',
+            $recordenrolid
         );
 
         // Send the email notification.
@@ -446,6 +433,13 @@ function process_enrolment_record($record) {
                 '*',
                 MUST_EXIST
             );
+            // Check if user is already actively enrolled before enrolling.
+            $alreadyenrolled = $DB->record_exists_sql(
+                "SELECT 1 FROM {user_enrolments} ue
+                  WHERE ue.enrolid = :enrolid AND ue.userid = :userid AND ue.status = :status",
+                ['enrolid' => $instance->id, 'userid' => $userid, 'status' => ENROL_USER_ACTIVE]
+            );
+
             $enrol->enrol_user(
                 $instance,
                 $userid,
@@ -456,7 +450,10 @@ function process_enrolment_record($record) {
             );
         }
 
-        send_welcome_email($user, $course);
+        // Only send welcome email for genuinely new enrolments.
+        if (empty($alreadyenrolled)) {
+            send_welcome_email($user, $course);
+        }
 
         $action = 'Enrol';
         log_record(
@@ -476,7 +473,8 @@ function process_enrolment_record($record) {
             $userpersonid,
             $useractivityid,
             $action,
-            'Success'
+            'Success',
+            $recordenrolid
         );
     } else if ($enrolmentstatus == 'Suspend') {
         // Suspend the user in the course.
@@ -500,7 +498,8 @@ function process_enrolment_record($record) {
             $userpersonid,
             $useractivityid,
             $action,
-            'Success'
+            'Success',
+            $recordenrolid
         );
     }
 
@@ -649,6 +648,7 @@ function send_welcome_email($user, $course) {
  * @param int $useractivityid The user's activity ID from ELM.
  * @param string $action The action taken (Enrol, Suspend, etc.).
  * @param string $status The result status (Success, Error, etc.).
+ * @param int $recordenrolid The sequential record ID from the CData API.
  * @return void
  */
 function log_record(
@@ -668,7 +668,8 @@ function log_record(
     $userpersonid,
     $useractivityid,
     $action,
-    $status
+    $status,
+    $recordenrolid = 0
 ) {
     global $DB;
 
@@ -697,6 +698,7 @@ function log_record(
     $log->person_id = $userpersonid;
     $log->activity_id = $useractivityid;
     $log->elm_enrolment_id = $enrolmentid;
+    $log->record_enrol_id = $recordenrolid;
     $log->action = $action;
     $log->status = $status;
     $log->timestamp = time();

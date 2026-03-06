@@ -20,6 +20,7 @@
             <FIELD NAME="person_id" TYPE="int" LENGTH="100" NOTNULL="true" COMMENT="Learner ID"/>
             <FIELD NAME="activity_id" TYPE="int" LENGTH="100" NOTNULL="true" COMMENT="Activity ID for class"/>
             <FIELD NAME="elm_enrolment_id" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="Custom enrolment ID"/>
+            <FIELD NAME="record_enrol_id" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" COMMENT="Sequential record ID from CData API for high-water mark tracking"/>
             <FIELD NAME="action" TYPE="char" LENGTH="100" NOTNULL="true" COMMENT="Action (enrolled, suspended)"/>
             <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" COMMENT="Status (success, error)"/>
             <FIELD NAME="timestamp" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="Timestamp"/>
@@ -27,6 +28,9 @@
         <KEYS>
             <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
         </KEYS>
+        <INDEXES>
+            <INDEX NAME="idx_record_enrol_id" UNIQUE="false" FIELDS="record_enrol_id"/>
+        </INDEXES>
     </TABLE>
     <TABLE NAME="local_psaelmsync_runs" COMMENT="Run logs for PSA ELM Sync plugin">
         <FIELDS>

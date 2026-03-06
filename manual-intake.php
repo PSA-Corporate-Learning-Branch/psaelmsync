@@ -78,9 +78,9 @@ $apiurlfiltered = '';
  * @param bool $isenrolled Whether the user is currently enrolled.
  * @return array Status info with status, label, icon, class, can_process, reason keys.
  */
-function determine_record_status($record, $user, $course, $hashexists, $isenrolled) {
+function determine_record_status($record, $user, $course, $alreadyprocessed, $isenrolled) {
     // Already processed successfully.
-    if ($hashexists) {
+    if ($alreadyprocessed) {
         return [
             'status' => 'done',
             'label' => 'Already Processed',
@@ -226,6 +226,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
     $coursestate = required_param('course_state', PARAM_TEXT);
     $elmcourseid = required_param('elm_course_id', PARAM_TEXT);
     $elmenrolmentid = required_param('elm_enrolment_id', PARAM_TEXT);
+    $recordenrolid = optional_param('record_enrol_id', 0, PARAM_INT);
     $userguid = required_param('guid', PARAM_TEXT);
     $classcode = required_param('class_code', PARAM_TEXT);
     $useremail = required_param('email', PARAM_TEXT);
@@ -235,29 +236,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
     $personid = optional_param('person_id', '', PARAM_TEXT);
     $activityid = optional_param('activity_id', '', PARAM_TEXT);
 
+    // Compute hash for transition auditing (stored but no longer queried).
+    $hash = hash('sha256', $recorddatecreated
+        . $elmcourseid . $classcode
+        . $coursestate . $userguid . $useremail);
+
     // Check the ignore list before processing.
     if (local_psaelmsync_is_ignored_course($elmcourseid)) {
         $feedback = "Course ID "
             . s($elmcourseid)
             . " is on the ignore list and will not be processed.";
         $feedbacktype = 'warning';
+    } else if ($recordenrolid > 0 && $DB->record_exists_select(
+        'local_psaelmsync_logs',
+        "record_enrol_id = :rid AND status = 'Success'",
+        ['rid' => $recordenrolid]
+    )) {
+        $feedback = 'This record has already been processed.';
+        $feedbacktype = 'warning';
     } else {
-        $hashcontent = $recorddatecreated
-            . $elmcourseid . $classcode
-            . $coursestate . $userguid . $useremail;
-        $hash = hash('sha256', $hashcontent);
-
-        $hashcheck = $DB->get_record(
-            'local_psaelmsync_logs',
-            ['sha256hash' => $hash],
-            '*',
-            IGNORE_MULTIPLE
-        );
-
-        if ($hashcheck && $hashcheck->status === 'Success') {
-            $feedback = 'This record has already been processed.';
-            $feedbacktype = 'warning';
-        } else {
             $course = $DB->get_record(
                 'course',
                 ['idnumber' => $elmcourseid]
@@ -379,6 +376,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
                                     $log->user_email = $user->email;
                                     $log->elm_enrolment_id =
                                         $elmenrolmentid;
+                                    $log->record_enrol_id =
+                                        $recordenrolid;
                                     $log->oprid = $oprid;
                                     $log->person_id = $personid;
                                     $log->activity_id = $activityid;
@@ -428,6 +427,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
                                 $log->user_email = $user->email;
                                 $log->elm_enrolment_id =
                                     $elmenrolmentid;
+                                $log->record_enrol_id =
+                                    $recordenrolid;
                                 $log->oprid = $oprid;
                                 $log->person_id = $personid;
                                 $log->activity_id = $activityid;
@@ -488,6 +489,7 @@ if (
         $coursestate = $recorddata['course_state'];
         $elmcourseid = $recorddata['elm_course_id'];
         $elmenrolmentid = $recorddata['elm_enrolment_id'];
+        $recordenrolid = (int)($recorddata['record_enrol_id'] ?? 0);
         $userguid = $recorddata['guid'];
         $classcode = $recorddata['class_code'];
         $useremail = $recorddata['email'];
@@ -497,25 +499,22 @@ if (
         $personid = $recorddata['person_id'] ?? '';
         $activityid = $recorddata['activity_id'] ?? '';
 
+        // Compute hash for transition auditing (stored but no longer queried).
+        $hash = hash('sha256', $recorddatecreated
+            . $elmcourseid . $classcode
+            . $coursestate . $userguid . $useremail);
+
         // Skip courses on the ignore list.
         if (local_psaelmsync_is_ignored_course($elmcourseid)) {
             continue;
         }
 
-        $hashcontent = $recorddatecreated
-            . $elmcourseid . $classcode
-            . $coursestate . $userguid . $useremail;
-        $hash = hash('sha256', $hashcontent);
-
-        $hashcheck = $DB->get_record(
+        // Skip already processed records.
+        if ($recordenrolid > 0 && $DB->record_exists_select(
             'local_psaelmsync_logs',
-            ['sha256hash' => $hash],
-            '*',
-            IGNORE_MULTIPLE
-        );
-
-        if ($hashcheck && $hashcheck->status === 'Success') {
-            // Skip already processed successfully.
+            "record_enrol_id = :rid AND status = 'Success'",
+            ['rid' => $recordenrolid]
+        )) {
             continue;
         }
 
@@ -593,6 +592,7 @@ if (
             $log->user_guid = $user->idnumber;
             $log->user_email = $user->email;
             $log->elm_enrolment_id = $elmenrolmentid;
+            $log->record_enrol_id = $recordenrolid;
             $log->oprid = $oprid;
             $log->person_id = $personid;
             $log->activity_id = $activityid;
@@ -624,6 +624,7 @@ if (
             $log->user_guid = $user->idnumber;
             $log->user_email = $user->email;
             $log->elm_enrolment_id = $elmenrolmentid;
+            $log->record_enrol_id = $recordenrolid;
             $log->oprid = $oprid;
             $log->person_id = $personid;
             $log->activity_id = $activityid;
@@ -806,20 +807,16 @@ if (!empty($data['value'])) {
             'id, fullname, shortname'
         );
 
-        $hashcontent = $record['date_created']
-            . $record['COURSE_IDENTIFIER']
-            . $record['COURSE_SHORTNAME']
-            . $record['COURSE_STATE']
-            . $record['GUID']
-            . $record['EMAIL'];
-        $hash = hash('sha256', $hashcontent);
-        $existinglog = $DB->get_record(
-            'local_psaelmsync_logs',
-            ['sha256hash' => $hash],
-            'id, status',
-            IGNORE_MULTIPLE
-        );
-        $hashexists = $existinglog
+        $recordenrolid = (int)($record['record_enrol_id'] ?? 0);
+        $existinglog = $recordenrolid > 0
+            ? $DB->get_record(
+                'local_psaelmsync_logs',
+                ['record_enrol_id' => $recordenrolid],
+                'id, status',
+                IGNORE_MULTIPLE
+            )
+            : false;
+        $alreadyprocessed = $existinglog
             && $existinglog->status === 'Success';
 
         $isenrolled = false;
@@ -834,7 +831,7 @@ if (!empty($data['value'])) {
             $record,
             $user,
             $course,
-            $hashexists,
+            $alreadyprocessed,
             $isenrolled
         );
 
@@ -852,7 +849,7 @@ if (!empty($data['value'])) {
             'course' => $course,
             'is_enrolled' => $isenrolled,
             'status_info' => $statusinfo,
-            'hash_exists' => $hashexists,
+            'already_processed' => $alreadyprocessed,
         ];
     }
 }
@@ -1400,6 +1397,7 @@ echo $OUTPUT->header();
                 'course_state' => $record['COURSE_STATE'],
                 'elm_course_id' => $record['COURSE_IDENTIFIER'],
                 'elm_enrolment_id' => $record['ENROLMENT_ID'],
+                'record_enrol_id' => $record['record_enrol_id'] ?? 0,
                 'guid' => $record['GUID'],
                 'class_code' => $record['COURSE_SHORTNAME'],
                 'email' => $record['EMAIL'],
@@ -1526,6 +1524,11 @@ echo $OUTPUT->header();
                                    echo htmlspecialchars(
                                        $record['ENROLMENT_ID']
                                    ); ?>">
+                            <input type="hidden"
+                                   name="record_enrol_id"
+                                   value="<?php
+                                   echo (int)($record['record_enrol_id'] ?? 0);
+                                   ?>">
                             <input type="hidden"
                                    name="record_date_created"
                                    value="<?php

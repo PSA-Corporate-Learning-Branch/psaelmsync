@@ -100,5 +100,32 @@ function xmldb_local_psaelmsync_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026012702, 'local', 'psaelmsync');
     }
 
+    // Add record_enrol_id column for high-water mark tracking.
+    if ($oldversion < 2026030501) {
+        $table = new xmldb_table('local_psaelmsync_logs');
+        $field = new xmldb_field(
+            'record_enrol_id',
+            XMLDB_TYPE_INTEGER,
+            '10',
+            null,
+            XMLDB_NOTNULL,
+            null,
+            0,
+            'elm_enrolment_id',
+        );
+
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Add index for high-water mark queries.
+        $index = new xmldb_index('idx_record_enrol_id', XMLDB_INDEX_NOTUNIQUE, ['record_enrol_id']);
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+
+        upgrade_plugin_savepoint(true, 2026030501, 'local', 'psaelmsync');
+    }
+
     return true;
 }
