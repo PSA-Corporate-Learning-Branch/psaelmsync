@@ -26,8 +26,6 @@ defined('MOODLE_INTERNAL') || die();
 
 $string['action'] = 'Action';
 $string['already_enrolled'] = 'Already Enrolled';
-$string['apitoken'] = 'API Token';
-$string['apitoken_desc'] = 'API Token for CData access. A Base64 encoded value of the username and password.';
 $string['apitest'] = 'API Test';
 $string['apitest_cleanup'] = 'Cleanup';
 $string['apitest_cleanup_btn'] = 'Delete all test records';
@@ -42,6 +40,8 @@ $string['apitest_poolsize'] = '{$a} users in the enrolled pool available for sus
 $string['apitest_state'] = 'Enrolment pool';
 $string['apitest_suspendratio'] = 'Suspend ratio';
 $string['apitest_suspendratio_desc'] = 'Percentage of records that will be Suspend actions (drawn from the enrolled pool). Only applies when the pool has users from a previous run.';
+$string['apitoken'] = 'API Token';
+$string['apitoken_desc'] = 'API Token for CData access. A Base64 encoded value of the username and password.';
 $string['apiurl'] = 'Enrolment API URL';
 $string['apiurl_desc'] = 'CData Endpoint for enrolments.';
 $string['completion_apitoken'] = 'Completion API Token';

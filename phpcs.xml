@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<ruleset name="local_psaelmsync">
+    <description>PHPCS config for local_psaelmsync</description>
+    <rule ref="moodle"/>
+    <config name="moodleBranch" value="405"/>
+</ruleset>
