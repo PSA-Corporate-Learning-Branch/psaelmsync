@@ -86,6 +86,7 @@ Access dashboards from the plugin settings page or directly:
 - **Manual Intake** (`/local/psaelmsync/manual-intake.php`) - Trigger enrollment sync manually
 - **Manual Completion** (`/local/psaelmsync/manual-complete.php`) - Trigger completion processing manually
 - **External Trigger** (`/local/psaelmsync/trigger_sync.php`) - Endpoint for external cron systems
+- **API Test** (`/local/psaelmsync/api-test.php`) - Generate sample enrolment/suspend records in the CData API for testing. See [API Test Documentation](api-test-documentation.md) for details.
 
 ## Database Tables
 
