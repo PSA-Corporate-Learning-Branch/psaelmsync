@@ -103,8 +103,7 @@ function local_psaelmsync_sync() {
     $data = json_decode($response, true);
 
     if (empty($data)) {
-        mtrace('PSA Enrol Sync: No data received from API: '
-            . var_export($response, true));
+        mtrace('PSA Enrol Sync: No data received from API (empty or invalid JSON response).');
         return;
     }
 

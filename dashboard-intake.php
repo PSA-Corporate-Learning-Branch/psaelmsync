@@ -116,8 +116,6 @@ foreach ($lastruns as $run) {
     $chartdata['errors'][] = $run->errorcount;
 }
 
-// Encode the data for use in JavaScript.
-$chartdatajson = json_encode($chartdata);
 ?>
 
 <!-- Include Chart.js -->
@@ -125,7 +123,7 @@ $chartdatajson = json_encode($chartdata);
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     var ctx = document.getElementById('runsChart').getContext('2d');
-    var chartData = <?php echo $chartdatajson; ?>;
+    var chartData = <?php echo json_encode($chartdata, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 
     new Chart(ctx, {
         type: 'line',

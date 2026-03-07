@@ -102,7 +102,7 @@ class log_table extends \table_sql {
      * @return string The HTML link to the user profile.
      */
     public function col_user_lastname($values) {
-        $name = $values->user_firstname . ' ' . $values->user_lastname;
+        $name = s($values->user_firstname . ' ' . $values->user_lastname);
         $userurl = new \moodle_url('/user/view.php', ['id' => $values->user_id]);
         return \html_writer::link($userurl, $name);
     }
@@ -114,7 +114,7 @@ class log_table extends \table_sql {
      * @return string The user email address.
      */
     public function col_user_email($values) {
-        return $values->user_email;
+        return s($values->user_email);
     }
 
     /**
@@ -124,7 +124,7 @@ class log_table extends \table_sql {
      * @return string The user GUID.
      */
     public function col_user_guid($values) {
-        return $values->user_guid;
+        return s($values->user_guid);
     }
 
     /**
@@ -135,7 +135,7 @@ class log_table extends \table_sql {
      */
     public function col_course_name($values) {
         $courseurl = new \moodle_url('/user/index.php', ['id' => $values->course_id]);
-        return \html_writer::link($courseurl, $values->course_name);
+        return \html_writer::link($courseurl, s($values->course_name));
     }
 
     /**
@@ -146,9 +146,9 @@ class log_table extends \table_sql {
      */
     public function col_user_details($values) {
         $userurl = new \moodle_url('/user/profile.php', ['id' => $values->user_id]);
-        $userdetails = "{$values->user_firstname} {$values->user_lastname}"
-            . "<br>GUID: {$values->user_guid}"
-            . "<br>Email: {$values->user_email}";
+        $userdetails = s($values->user_firstname . ' ' . $values->user_lastname)
+            . "<br>GUID: " . s($values->user_guid)
+            . "<br>Email: " . s($values->user_email);
         return \html_writer::link($userurl, $userdetails);
     }
 

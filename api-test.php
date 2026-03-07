@@ -45,8 +45,8 @@ $PAGE->set_heading(get_string('apitest', 'local_psaelmsync'));
 $apitesturl = get_config('local_psaelmsync', 'apiurl');
 $apitesttoken = get_config('local_psaelmsync', 'apitoken');
 
-// State file for tracking enrolled users across runs.
-define('APITEST_STATE_FILE', __DIR__ . '/.apitest_state.json');
+// State file stored in Moodle's data directory (not web-accessible).
+define('APITEST_STATE_FILE', $CFG->dataroot . '/psaelmsync_apitest_state.json');
 
 // Name pools for generating fake users.
 define('APITEST_FIRST_NAMES', [

@@ -311,8 +311,6 @@ class observer {
         $message .= "API URL: " . $apiurl . "\n";
         $message .= "HTTP Code: " . $httpcode . "\n";
         $message .= "Error: " . $curlerror . "\n";
-        $message .= "Payload: " . $jsondata . "\n";
-        $message .= "Response Body: " . $responsebody . "\n";
 
         $dummyuser = new \stdClass();
         $dummyuser->email = 'noreply-psalssync@learning.gww.gov.bc.ca';
