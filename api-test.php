@@ -320,7 +320,7 @@ if ($action === 'generate' && confirm_sesskey()) {
             foreach ($suspendkeys as $key) {
                 $entry = $pool[$key];
                 $record = apitest_build_suspend_record($entry, $state);
-                list($ok, $resp) = apitest_post_record($record, $apitesturl, $apitesttoken);
+                [$ok, $resp] = apitest_post_record($record, $apitesturl, $apitesttoken);
                 $label = "Suspend: {$entry['first_name']} {$entry['last_name']}"
                     . " &rarr; {$entry['elm_course_id']}";
                 if ($ok) {
@@ -338,7 +338,7 @@ if ($action === 'generate' && confirm_sesskey()) {
             $user = apitest_generate_user($state);
             $course = $courses[array_rand($courses)];
             $record = apitest_build_enrol_record($user, $course, $state);
-            list($ok, $resp) = apitest_post_record($record, $apitesturl, $apitesttoken);
+            [$ok, $resp] = apitest_post_record($record, $apitesturl, $apitesttoken);
             $label = "Enrol: {$user['first_name']} {$user['last_name']}"
                 . " &rarr; {$course['elm_course_id']} ({$course['course_name']})";
             if ($ok) {
