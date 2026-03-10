@@ -73,15 +73,17 @@ function local_psaelmsync_sync() {
         return;
     }
 
+    $mapper = new \local_psaelmsync\field_mapper();
+
     // High-water mark: only fetch records newer than the last one we processed.
     $lastrecordenrolid = get_config('local_psaelmsync', 'last_record_enrol_id');
     if ($lastrecordenrolid === false) {
         $lastrecordenrolid = 0;
     }
     $apiurlfiltered = $apiurl
-        . '?%24orderby=record_enrol_id+asc'
-        . '&%24filter=record_enrol_id+gt+' . (int)$lastrecordenrolid
-        . '+and+USER_STATE+eq+%27ACTIVE%27';
+        . '?%24orderby=' . $mapper->filter_field('record_enrol_id') . '+asc'
+        . '&%24filter=' . $mapper->filter_field('record_enrol_id') . '+gt+' . (int)$lastrecordenrolid
+        . '+and+' . $mapper->filter_field('USER_STATE') . '+eq+%27ACTIVE%27';
 
     // Make API call.
     $options = [
@@ -117,7 +119,8 @@ function local_psaelmsync_sync() {
     $maxrecordenrolid = (int)$lastrecordenrolid;
 
     // This is the primary loop where we start to look at each record.
-    foreach ($data['value'] as $record) {
+    foreach ($data['value'] as $apirecord) {
+        $record = $mapper->normalize($apirecord);
         $recordcount++;
         // Track the highest record_enrol_id seen in this batch.
         $recordenrolid = (int)($record['record_enrol_id'] ?? 0);

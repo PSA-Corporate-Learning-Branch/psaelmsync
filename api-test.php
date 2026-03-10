@@ -28,6 +28,8 @@
 require_once('../../config.php');
 require_once($CFG->libdir . '/filelib.php');
 
+$mapper = new \local_psaelmsync\field_mapper();
+
 require_login();
 
 $context = context_system::instance();
@@ -160,15 +162,16 @@ function apitest_generate_user(&$state) {
  * @param array $user User data from apitest_generate_user().
  * @param array $course Course data from apitest_load_courses().
  * @param array $state State array (modified in place for enrolment_id counter).
+ * @param \local_psaelmsync\field_mapper $mapper Field mapper for API field translation.
+ * @param string $shortname Course shortname to use in the record.
  * @return array The API record payload.
  */
-function apitest_build_enrol_record($user, $course, &$state) {
+function apitest_build_enrol_record($user, $course, &$state, $mapper, $shortname) {
     $enrolmentid = $state['next_enrolment_id'];
     $state['next_enrolment_id']++;
     $now = date('Y-m-d\TH:i:s') . '.000-08:00';
-    $shortname = 'ITEM-' . rand(10000, 99999) . '-' . rand(1, 9);
 
-    return [
+    return $mapper->intake_payload([
         'FIRST_NAME' => $user['first_name'],
         'LAST_NAME' => $user['last_name'],
         'EMAIL' => $user['email'],
@@ -184,7 +187,7 @@ function apitest_build_enrol_record($user, $course, &$state) {
         'ACTIVITY_ID' => (string)$user['activity_id'],
         'OPRID' => $user['oprid'],
         'ENROLMENT_ID' => (string)$enrolmentid,
-    ];
+    ]);
 }
 
 /**
@@ -192,14 +195,15 @@ function apitest_build_enrol_record($user, $course, &$state) {
  *
  * @param array $entry Previously enrolled user data from state.
  * @param array $state State array (modified in place for enrolment_id counter).
+ * @param \local_psaelmsync\field_mapper $mapper Field mapper for API field translation.
  * @return array The API record payload.
  */
-function apitest_build_suspend_record($entry, &$state) {
+function apitest_build_suspend_record($entry, &$state, $mapper) {
     $enrolmentid = $state['next_enrolment_id'];
     $state['next_enrolment_id']++;
     $now = date('Y-m-d\TH:i:s') . '.000-08:00';
 
-    return [
+    return $mapper->intake_payload([
         'FIRST_NAME' => $entry['first_name'],
         'LAST_NAME' => $entry['last_name'],
         'EMAIL' => $entry['email'],
@@ -215,7 +219,7 @@ function apitest_build_suspend_record($entry, &$state) {
         'ACTIVITY_ID' => (string)$entry['activity_id'],
         'OPRID' => $entry['oprid'],
         'ENROLMENT_ID' => (string)$enrolmentid,
-    ];
+    ]);
 }
 
 /**
@@ -241,13 +245,14 @@ function apitest_post_record($record, $url, $token) {
  *
  * @param string $apiurl The API endpoint URL.
  * @param string $token The API auth token.
+ * @param \local_psaelmsync\field_mapper $mapper Field mapper for API field translation.
  * @return array List of result message strings.
  */
-function apitest_cleanup($apiurl, $token) {
+function apitest_cleanup($apiurl, $token, $mapper) {
     $messages = [];
     $curl = new curl();
     $curl->setHeader(['x-cdata-authtoken: ' . $token]);
-    $filter = urlencode("EMAIL like '%@test.gov.bc.ca'");
+    $filter = urlencode($mapper->filter_field('EMAIL') . " like '%@test.gov.bc.ca'");
     $url = $apiurl . '?$filter=' . $filter;
     $response = $curl->get($url);
     $data = json_decode($response, true);
@@ -260,7 +265,8 @@ function apitest_cleanup($apiurl, $token) {
 
     $total = count($records);
     $deleted = 0;
-    foreach ($records as $rec) {
+    foreach ($records as $apirecord) {
+        $rec = $mapper->normalize($apirecord);
         $recid = $rec['record_enrol_id'] ?? null;
         if ($recid === null) {
             continue;
@@ -319,7 +325,7 @@ if ($action === 'generate' && confirm_sesskey()) {
             }
             foreach ($suspendkeys as $key) {
                 $entry = $pool[$key];
-                $record = apitest_build_suspend_record($entry, $state);
+                $record = apitest_build_suspend_record($entry, $state, $mapper);
                 [$ok, $resp] = apitest_post_record($record, $apitesturl, $apitesttoken);
                 $label = "Suspend: {$entry['first_name']} {$entry['last_name']}"
                     . " &rarr; {$entry['elm_course_id']}";
@@ -337,7 +343,8 @@ if ($action === 'generate' && confirm_sesskey()) {
         for ($i = 0; $i < $numenrols; $i++) {
             $user = apitest_generate_user($state);
             $course = $courses[array_rand($courses)];
-            $record = apitest_build_enrol_record($user, $course, $state);
+            $shortname = 'ITEM-' . rand(10000, 99999) . '-' . rand(1, 9);
+            $record = apitest_build_enrol_record($user, $course, $state, $mapper, $shortname);
             [$ok, $resp] = apitest_post_record($record, $apitesturl, $apitesttoken);
             $label = "Enrol: {$user['first_name']} {$user['last_name']}"
                 . " &rarr; {$course['elm_course_id']} ({$course['course_name']})";
@@ -353,7 +360,7 @@ if ($action === 'generate' && confirm_sesskey()) {
                     'activity_id' => $user['activity_id'],
                     'elm_course_id' => $course['elm_course_id'],
                     'course_name' => $course['course_name'],
-                    'shortname' => $record['COURSE_SHORTNAME'],
+                    'shortname' => $shortname,
                 ];
             } else {
                 $results[] = ['type' => 'error', 'message' => "{$label} — {$resp}"];
@@ -363,7 +370,7 @@ if ($action === 'generate' && confirm_sesskey()) {
         apitest_save_state($state);
     }
 } else if ($action === 'cleanup' && confirm_sesskey()) {
-    $messages = apitest_cleanup($apitesturl, $apitesttoken);
+    $messages = apitest_cleanup($apitesturl, $apitesttoken, $mapper);
     foreach ($messages as $msg) {
         $results[] = ['type' => 'info', 'message' => $msg];
     }
@@ -427,6 +434,11 @@ echo $OUTPUT->header();
             <a class="nav-link active"
                href="/local/psaelmsync/api-test.php"
                aria-current="page">API Test</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link"
+               href="/local/psaelmsync/field-mapping.php">
+                Field Mapping</a>
         </li>
     </ul>
 </nav>

@@ -83,6 +83,11 @@ echo $OUTPUT->header();
                href="/local/psaelmsync/api-test.php">
                 API Test</a>
         </li>
+        <li class="nav-item">
+            <a class="nav-link"
+               href="/local/psaelmsync/field-mapping.php">
+                Field Mapping</a>
+        </li>
     </ul>
 </nav>
 

@@ -120,7 +120,8 @@ class observer {
 
             $ch = curl_init($apiurl);
 
-            $data = [
+            $mapper = new \local_psaelmsync\field_mapper();
+            $data = $mapper->completion_payload([
                 'COURSE_COMPLETE_DATE' => date('Y-m-d'),
                 'COURSE_STATE' => $enrolstatus,
                 'ENROLMENT_ID' => (int) $elmenrolmentid,
@@ -136,7 +137,7 @@ class observer {
                 'ACTIVITY_ID' => $deets->activity_id ?? 0,
                 'PERSON_ID' => $deets->person_id ?? 0,
                 'COURSE_LONG_NAME' => $coursename,
-            ];
+            ]);
 
             $jsondata = json_encode($data);
             $options = [

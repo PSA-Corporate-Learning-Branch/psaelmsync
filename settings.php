@@ -97,6 +97,20 @@ if ($hassiteconfig) {
         PARAM_TEXT,
     ));
 
+    $settings->add(new admin_setting_heading(
+        'local_psaelmsync/fieldmapping',
+        get_string('fieldmapping', 'local_psaelmsync'),
+        html_writer::link(
+            new moodle_url('/local/psaelmsync/field-mapping.php'),
+            get_string('fieldmapping', 'local_psaelmsync')
+        )
+        . html_writer::tag(
+            'p',
+            get_string('fieldmapping_desc', 'local_psaelmsync'),
+            ['class' => 'text-muted']
+        ),
+    ));
+
     $settings->add(new \local_psaelmsync\admin\setting_highwatermark(
         'local_psaelmsync/last_record_enrol_id',
         get_string('last_record_enrol_id', 'local_psaelmsync'),

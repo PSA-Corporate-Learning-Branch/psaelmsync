@@ -30,6 +30,8 @@ require_once($CFG->libdir . '/filelib.php');
 require_once($CFG->dirroot . '/user/lib.php');
 require_once($CFG->dirroot . '/local/psaelmsync/lib.php');
 
+$mapper = new \local_psaelmsync\field_mapper();
+
 global $CFG, $DB, $PAGE, $OUTPUT;
 
 require_login();
@@ -57,11 +59,17 @@ $feedbacktype = 'info';
 // Get filter values (persisted across requests).
 $filterfrom = optional_param('from', '', PARAM_TEXT);
 $filterto = optional_param('to', '', PARAM_TEXT);
+
+// Default display values for date pickers (today 06:00 to now).
+$defaultfrom = date('Y-m-d\T06:00');
+$defaultto = date('Y-m-d\TH:i');
+$displayfrom = !empty($filterfrom) ? $filterfrom : $defaultfrom;
+$displayto = !empty($filterto) ? $filterto : $defaultto;
+
 $filteremail = optional_param('email', '', PARAM_TEXT);
 $filterguid = optional_param('guid', '', PARAM_TEXT);
 $filtercourse = optional_param('course', '', PARAM_TEXT);
 $filterstate = optional_param('state', '', PARAM_ALPHA);
-$filterstatus = optional_param('status', '', PARAM_ALPHA);
 $filterfirstname = optional_param('firstname', '', PARAM_TEXT);
 $filterlastname = optional_param('lastname', '', PARAM_TEXT);
 $filteroprid = optional_param('oprid', '', PARAM_TEXT);
@@ -677,55 +685,56 @@ if ($hasfilters) {
     $filters = [];
 
     if (!empty($filteremail)) {
-        $filters[] = "email+eq+%27"
+        $filters[] = $mapper->filter_field('EMAIL') . "+eq+%27"
             . urlencode($filteremail) . "%27";
     }
     if (!empty($filterguid)) {
-        $filters[] = "GUID+eq+%27"
+        $filters[] = $mapper->filter_field('GUID') . "+eq+%27"
             . urlencode($filterguid) . "%27";
     }
     if (!empty($filterfirstname)) {
-        $filters[] = "FIRST_NAME+eq+%27"
+        $filters[] = $mapper->filter_field('FIRST_NAME') . "+eq+%27"
             . urlencode($filterfirstname) . "%27";
     }
     if (!empty($filterlastname)) {
-        $filters[] = "LAST_NAME+eq+%27"
+        $filters[] = $mapper->filter_field('LAST_NAME') . "+eq+%27"
             . urlencode($filterlastname) . "%27";
     }
     if (!empty($filteroprid)) {
-        $filters[] = "OPRID+eq+%27"
+        $filters[] = $mapper->filter_field('OPRID') . "+eq+%27"
             . urlencode($filteroprid) . "%27";
     }
     if (!empty($filterpersonid)) {
-        $filters[] = "PERSON_ID+eq+"
+        $filters[] = $mapper->filter_field('PERSON_ID') . "+eq+"
             . urlencode($filterpersonid);
     }
     if (!empty($filtercourse)) {
         // Support both course ID and shortname search.
         if (is_numeric($filtercourse)) {
-            $filters[] = "COURSE_IDENTIFIER+eq+"
+            $filters[] = $mapper->filter_field('COURSE_IDENTIFIER') . "+eq+"
                 . urlencode($filtercourse);
         } else {
-            $filters[] = "COURSE_SHORTNAME+eq+%27"
+            $filters[] = $mapper->filter_field('COURSE_SHORTNAME') . "+eq+%27"
                 . urlencode($filtercourse) . "%27";
         }
     }
     if (!empty($filterfrom) && !empty($filterto)) {
-        $filters[] = "date_created+gt+%27"
+        $filters[] = $mapper->filter_field('date_created') . "+gt+%27"
             . urlencode($filterfrom) . "%27";
-        $filters[] = "date_created+lt+%27"
+        $filters[] = $mapper->filter_field('date_created') . "+lt+%27"
             . urlencode($filterto) . "%27";
     } else if (!empty($filterfrom)) {
-        $filters[] = "date_created+gt+%27"
+        $filters[] = $mapper->filter_field('date_created') . "+gt+%27"
             . urlencode($filterfrom) . "%27";
     }
     if (!empty($filterstate)) {
-        $filters[] = "COURSE_STATE+eq+%27"
+        $filters[] = $mapper->filter_field('COURSE_STATE') . "+eq+%27"
             . urlencode($filterstate) . "%27";
     }
 
     $apiurlfiltered = $apiurl
-        . "?%24orderby=COURSE_STATE_DATE,date_created+asc";
+        . "?%24orderby=" . $mapper->filter_field('COURSE_STATE_DATE')
+        . "," . $mapper->filter_field('date_created') . "+asc";
     if (!empty($filters)) {
         $apiurlfiltered .= "&%24filter="
             . implode("+and+", $filters);
@@ -794,7 +803,8 @@ if ($hasfilters) {
 // Process records to add status information.
 $processedrecords = [];
 if (!empty($data['value'])) {
-    foreach ($data['value'] as $record) {
+    foreach ($data['value'] as $apirecord) {
+        $record = $mapper->normalize($apirecord);
         // Skip courses on the ignore list entirely.
         if (local_psaelmsync_is_ignored_course($record['COURSE_IDENTIFIER'])) {
             continue;
@@ -837,14 +847,6 @@ if (!empty($data['value'])) {
             $alreadyprocessed,
             $isenrolled
         );
-
-        // Apply status filter if set.
-        if (
-            !empty($filterstatus)
-            && $statusinfo['status'] !== $filterstatus
-        ) {
-            continue;
-        }
 
         $processedrecords[] = [
             'record' => $record,
@@ -990,6 +992,15 @@ echo $OUTPUT->header();
     gap: 0.5rem;
     align-items: end;
 }
+.date-presets {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+}
+.date-presets .btn {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+}
 .results-summary {
     display: flex;
     gap: 1rem;
@@ -1086,6 +1097,11 @@ echo $OUTPUT->header();
                href="/local/psaelmsync/api-test.php">
                 API Test</a>
         </li>
+        <li class="nav-item">
+            <a class="nav-link"
+               href="/local/psaelmsync/field-mapping.php">
+                Field Mapping</a>
+        </li>
     </ul>
 </nav>
 
@@ -1113,7 +1129,8 @@ echo $OUTPUT->header();
                     <input type="datetime-local" id="from"
                            name="from"
                            class="form-control form-control-sm"
-                           value="<?php echo s($filterfrom); ?>">
+                           step="60"
+                           value="<?php echo s($displayfrom); ?>">
                 </div>
             </div>
             <div class="col-md-2">
@@ -1122,9 +1139,50 @@ echo $OUTPUT->header();
                     <input type="datetime-local" id="to"
                            name="to"
                            class="form-control form-control-sm"
-                           value="<?php echo s($filterto); ?>">
+                           step="60"
+                           value="<?php echo s($displayto); ?>">
                 </div>
             </div>
+            <div class="col-md-4 d-flex align-items-end">
+                <div class="date-presets mb-1" role="group"
+                     aria-label="Date range presets">
+                    <?php
+                    $today06 = date('Y-m-d\T06:00');
+                    $now = date('Y-m-d\TH:i');
+                    $yesterday06 = date(
+                        'Y-m-d\T06:00',
+                        strtotime('-1 day')
+                    );
+                    $weekago06 = date(
+                        'Y-m-d\T06:00',
+                        strtotime('-7 days')
+                    );
+                    ?>
+                    <button type="button"
+                            class="btn btn-outline-secondary btn-sm"
+                            data-from="<?php echo $today06; ?>"
+                            data-to="<?php echo $now; ?>"
+                            onclick="document.getElementById('from').value=this.dataset.from;
+                                     document.getElementById('to').value=this.dataset.to;">
+                        Today</button>
+                    <button type="button"
+                            class="btn btn-outline-secondary btn-sm"
+                            data-from="<?php echo $yesterday06; ?>"
+                            data-to="<?php echo $today06; ?>"
+                            onclick="document.getElementById('from').value=this.dataset.from;
+                                     document.getElementById('to').value=this.dataset.to;">
+                        Yesterday</button>
+                    <button type="button"
+                            class="btn btn-outline-secondary btn-sm"
+                            data-from="<?php echo $weekago06; ?>"
+                            data-to="<?php echo $now; ?>"
+                            onclick="document.getElementById('from').value=this.dataset.from;
+                                     document.getElementById('to').value=this.dataset.to;">
+                        Last 7 Days</button>
+                </div>
+            </div>
+        </div>
+        <div class="row mt-2">
             <div class="col-md-2">
                 <div class="form-group">
                     <label for="firstname">First Name</label>
@@ -1218,35 +1276,6 @@ echo $OUTPUT->header();
                             echo $filterstate === 'Suspend'
                                 ? 'selected' : '';
                         ?>>Suspend</option>
-                    </select>
-                </div>
-            </div>
-            <div class="col-md-2">
-                <div class="form-group">
-                    <label for="status">Record Status</label>
-                    <select id="status" name="status"
-                            class="form-control form-control-sm">
-                        <option value="">All</option>
-                        <option value="ready" <?php
-                            echo $filterstatus === 'ready'
-                                ? 'selected' : '';
-                        ?>>Ready to Process</option>
-                        <option value="new_user" <?php
-                            echo $filterstatus === 'new_user'
-                                ? 'selected' : '';
-                        ?>>New User</option>
-                        <option value="mismatch" <?php
-                            echo $filterstatus === 'mismatch'
-                                ? 'selected' : '';
-                        ?>>Email Mismatch</option>
-                        <option value="blocked" <?php
-                            echo $filterstatus === 'blocked'
-                                ? 'selected' : '';
-                        ?>>Blocked</option>
-                        <option value="done" <?php
-                            echo $filterstatus === 'done'
-                                ? 'selected' : '';
-                        ?>>Already Done</option>
                     </select>
                 </div>
             </div>
@@ -1628,10 +1657,6 @@ echo $OUTPUT->header();
                             <input type="hidden" name="state"
                                    value="<?php
                                        echo s($filterstate);
-                                   ?>">
-                            <input type="hidden" name="status"
-                                   value="<?php
-                                       echo s($filterstatus);
                                    ?>">
                             <button type="submit" name="process"
                                     class="btn btn-sm btn-success">

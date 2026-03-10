@@ -37,6 +37,8 @@ require_once($CFG->libdir . '/filelib.php');
 require_once($CFG->dirroot . '/user/lib.php');
 require_once($CFG->dirroot . '/local/psaelmsync/lib.php');
 
+$mapper = new \local_psaelmsync\field_mapper();
+
 require_login();
 
 $context = context_system::instance();
@@ -201,8 +203,9 @@ function check_cdata_completion($guid, $elmcourseid) {
     }
 
     // Query for this specific user/course combination.
-    $filter = "GUID+eq+%27" . urlencode($guid)
-        . "%27+and+COURSE_IDENTIFIER+eq+" . urlencode($elmcourseid);
+    $mapper = new \local_psaelmsync\field_mapper();
+    $filter = $mapper->filter_field('GUID') . "+eq+%27" . urlencode($guid)
+        . "%27+and+" . $mapper->filter_field('COURSE_IDENTIFIER') . "+eq+" . urlencode($elmcourseid);
     $queryurl = $apiurl . "?%24filter=" . $filter;
 
     $ch = curl_init($queryurl);
@@ -265,7 +268,8 @@ function check_cdata_completion($guid, $elmcourseid) {
     $records = $data['value'] ?? [];
     $completedrecord = null;
 
-    foreach ($records as $record) {
+    foreach ($records as $apirecord) {
+        $record = $mapper->normalize($apirecord);
         if (
             isset($record['COURSE_STATE'])
             && $record['COURSE_STATE'] === 'Complete'
@@ -328,7 +332,8 @@ function post_completion_to_cdata($user, $course, $enrolmentrecord) {
     $classcode = $enrolmentrecord->class_code;
     $sha256hash = $enrolmentrecord->sha256hash;
 
-    $data = [
+    $mapper = new \local_psaelmsync\field_mapper();
+    $data = $mapper->completion_payload([
         'COURSE_COMPLETE_DATE' => date('Y-m-d'),
         'COURSE_STATE' => 'Complete',
         'ENROLMENT_ID' => (int) $elmenrolmentid,
@@ -343,7 +348,7 @@ function post_completion_to_cdata($user, $course, $enrolmentrecord) {
         'OPRID' => $enrolmentrecord->oprid ?? '',
         'ACTIVITY_ID' => $enrolmentrecord->activity_id ?? 0,
         'PERSON_ID' => $enrolmentrecord->person_id ?? 0,
-    ];
+    ]);
 
     $jsondata = json_encode($data);
 
@@ -664,6 +669,11 @@ echo $OUTPUT->header();
             <a class="nav-link"
                href="/local/psaelmsync/api-test.php">
                 API Test</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link"
+               href="/local/psaelmsync/field-mapping.php">
+                Field Mapping</a>
         </li>
     </ul>
 </nav>
