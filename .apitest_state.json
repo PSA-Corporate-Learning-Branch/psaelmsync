@@ -1,0 +1,42 @@
+{
+    "enrolled": [
+        {
+            "first_name": "Meera",
+            "last_name": "King",
+            "email": "test.meera.king487@test.gov.bc.ca",
+            "guid": "2699ECF36F8FFFF5926FF2B4F2CEBEEF",
+            "oprid": "mking962",
+            "person_id": 800000,
+            "activity_id": 186175,
+            "elm_course_id": "40586",
+            "course_name": "Conflict Management for Leaders (Jul 8-9 2025)",
+            "shortname": "ITEM-11793-4"
+        },
+        {
+            "first_name": "Fiona",
+            "last_name": "Young",
+            "email": "test.fiona.young500@test.gov.bc.ca",
+            "guid": "A0BE50017DE686271F4FD796844F45E2",
+            "oprid": "fyoung566",
+            "person_id": 800001,
+            "activity_id": 626007,
+            "elm_course_id": "41385",
+            "course_name": "Conflict Management for Leaders (Jan 13-14 2026)",
+            "shortname": "ITEM-51544-7"
+        },
+        {
+            "first_name": "Amrit",
+            "last_name": "Cooper",
+            "email": "test.amrit.cooper114@test.gov.bc.ca",
+            "guid": "A81351731A284CF768F617FA15BE9EB0",
+            "oprid": "acooper902",
+            "person_id": 800002,
+            "activity_id": 122931,
+            "elm_course_id": "38375",
+            "course_name": "SBCPS Cohort Site: 2025-04-Thursday (2162-12)",
+            "shortname": "ITEM-89327-2"
+        }
+    ],
+    "next_enrolment_id": 90000003,
+    "next_person_id": 800003
+}
