@@ -59,14 +59,6 @@ if ($hassiteconfig) {
     ));
 
     $settings->add(new admin_setting_configtext(
-        'local_psaelmsync/notificationhours',
-        get_string('notificationhours', 'local_psaelmsync'),
-        get_string('notificationhours_desc', 'local_psaelmsync'),
-        1,
-        PARAM_INT,
-    ));
-
-    $settings->add(new admin_setting_configtext(
         'local_psaelmsync/completion_apiurl',
         get_string('completion_apiurl', 'local_psaelmsync'),
         get_string('completion_apiurl_desc', 'local_psaelmsync'),

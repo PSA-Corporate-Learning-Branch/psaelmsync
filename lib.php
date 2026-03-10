@@ -66,8 +66,6 @@ function local_psaelmsync_sync() {
     // Fetch API URL and token from config.
     $apiurl = get_config('local_psaelmsync', 'apiurl');
     $apitoken = get_config('local_psaelmsync', 'apitoken');
-    $notificationhours = get_config('local_psaelmsync', 'notificationhours');
-
     if (!$apiurl || !$apitoken) {
         mtrace('PSA Enrol Sync: API URL or Token not set.');
         return;
@@ -162,12 +160,6 @@ function local_psaelmsync_sync() {
         'skippedcount' => $skippedcount,
     ];
     $DB->insert_record('local_psaelmsync_runs', (object)$log);
-
-    // Check for the time since the last enrolment or suspend.
-    // If it has been more than N hours then send an email to the
-    // admin list notifying them that the bridge might be blocked
-    // on the ELM side.
-    check_last_enrolment_or_suspend($notificationhours);
 }
 
 /**
@@ -811,89 +803,6 @@ function send_failure_notification(
 
             // Send the email.
             email_to_user($recipient, $dummyuser, $subject, $message);
-        }
-    }
-}
-
-/**
- * Check the time since the last enrolment or suspend action and send
- * an inactivity notification if the threshold has been exceeded.
- *
- * Only sends notifications between 6 AM and 6 PM on weekdays.
- *
- * @param int $notificationhours The number of hours of inactivity before notifying.
- * @return void
- */
-function check_last_enrolment_or_suspend($notificationhours) {
-    global $DB;
-
-    // Calculate the threshold time.
-    $thresholdtime = time() - ($notificationhours * 3600);
-
-    // Check if the current time is between 6 AM and 6 PM on a weekday.
-    $currenttime = time();
-    // Day of week: 1 for Monday through 7 for Sunday.
-    $dayofweek = date('N', $currenttime);
-    // Hour of day: 0 through 23.
-    $hourofday = date('G', $currenttime);
-
-    if ($dayofweek >= 6 || $hourofday < 6 || $hourofday >= 18) {
-        // Do not send notifications outside of 6 AM to 6 PM, Monday to Friday.
-        return;
-    }
-
-    // Query the last enrolment or suspend record.
-    $lastaction = $DB->get_record_sql("
-        SELECT MAX(timestamp) AS lasttime
-        FROM {local_psaelmsync_logs}
-        WHERE action IN ('Enrol', 'Suspend')
-    ");
-
-    if ($lastaction && $lastaction->lasttime < $thresholdtime) {
-        // If the last action was before the threshold, send a notification.
-        send_inactivity_notification($notificationhours);
-    }
-}
-
-/**
- * Send an inactivity notification email to configured administrators.
- *
- * @param int $notificationhours The number of hours of inactivity that triggered this notification.
- * @return void
- */
-function send_inactivity_notification($notificationhours) {
-    global $CFG;
-
-    $adminemails = get_config('local_psaelmsync', 'notificationemails');
-
-    if (!empty($adminemails)) {
-        $emails = explode(',', $adminemails);
-        $subject = "PSA Enrol Sync Inactivity Notification";
-        $message = "No enrolment or suspension records have been "
-            . "processed in the last {$notificationhours} hours. "
-            . "Please check the system.";
-
-        $dummyuser = new stdClass();
-        $dummyuser->email = 'noreply-psalssync@gov.bc.ca';
-        $dummyuser->firstname = 'System';
-        $dummyuser->lastname = 'Notifier';
-        $dummyuser->id = -99;
-
-        foreach ($emails as $adminemail) {
-            $adminemail = trim($adminemail);
-
-            $recipient = new stdClass();
-            $recipient->email = $adminemail;
-            $recipient->id = -99;
-            $recipient->firstname = 'Admin';
-            $recipient->lastname = 'User';
-
-            email_to_user(
-                $recipient,
-                $dummyuser,
-                $subject,
-                $message
-            );
         }
     }
 }
