@@ -25,11 +25,10 @@
 namespace local_psaelmsync\admin;
 
 /**
- * A protected integer setting that requires two confirmation checkboxes before saving.
+ * A protected integer setting that requires unlocking before saving.
  *
- * The field is displayed read-only by default. The user must check an "unlock"
- * checkbox to reveal the input field, and then check a second "I understand"
- * confirmation before the new value will be saved.
+ * The field is displayed read-only by default inside a collapsible section.
+ * The user must check an "unlock" checkbox to enable the input field.
  */
 class setting_highwatermark extends \admin_setting {
     /**
@@ -42,9 +41,9 @@ class setting_highwatermark extends \admin_setting {
     }
 
     /**
-     * Write the setting only if both confirmation checkboxes are checked.
+     * Write the setting only if the unlock checkbox is checked.
      *
-     * @param mixed $data The form data (array with 'value', 'unlock', 'confirm' keys).
+     * @param mixed $data The form data (array with 'value' and 'unlock' keys).
      * @return string Empty on success, error message on failure.
      */
     public function write_setting($data) {
@@ -54,7 +53,6 @@ class setting_highwatermark extends \admin_setting {
 
         $newvalue = (int) ($data['value'] ?? 0);
         $unlock = !empty($data['unlock']);
-        $confirm = !empty($data['confirm']);
         $currentvalue = (int) $this->get_setting();
 
         // If the value hasn't changed, just accept it silently.
@@ -65,11 +63,6 @@ class setting_highwatermark extends \admin_setting {
         // Value changed but unlock not checked.
         if (!$unlock) {
             return get_string('highwatermark_err_unlock', 'local_psaelmsync');
-        }
-
-        // Unlock checked but confirmation not checked.
-        if (!$confirm) {
-            return get_string('highwatermark_err_confirm', 'local_psaelmsync');
         }
 
         // Validate: must be a non-negative integer.
@@ -95,7 +88,6 @@ class setting_highwatermark extends \admin_setting {
 
         $warning = get_string('highwatermark_warning', 'local_psaelmsync');
         $unlocklabel = get_string('highwatermark_unlock', 'local_psaelmsync');
-        $confirmlabel = get_string('highwatermark_confirm', 'local_psaelmsync');
 
         $html = '';
 
@@ -162,48 +154,27 @@ class setting_highwatermark extends \admin_setting {
                         'style' => 'max-width: 20rem;',
                     ]),
                     ['id' => $id . '_field', 'style' => 'margin-bottom: 0.5rem;']
-                )
-                // Step 2: Confirmation checkbox.
-                . \html_writer::tag(
-                    'div',
-                    \html_writer::checkbox(
-                        $name . '[confirm]',
-                        1,
-                        false,
-                        '',
-                        ['id' => $id . '_confirm']
-                    )
-                    . \html_writer::tag('label', $confirmlabel, [
-                        'for' => $id . '_confirm',
-                        'style' => 'font-weight: bold; color: #b94a48;',
-                    ]),
-                    ['id' => $id . '_confirmdiv', 'style' => 'margin-top: 0.25rem;']
                 ),
                 []
             ),
             ['id' => $id . '_details']
         );
 
-        // Progressive enhancement: hide field + confirm until unlock is checked.
+        // Progressive enhancement: hide field until unlock is checked.
         $html .= \html_writer::script("
             (function() {
                 var unlock = document.getElementById('" . $id . "_unlock');
                 var fieldDiv = document.getElementById('" . $id . "_field');
                 var input = document.getElementById('" . $id . "');
-                var confirmDiv = document.getElementById('" . $id . "_confirmdiv');
-                var confirmBox = document.getElementById('" . $id . "_confirm');
 
                 function toggle() {
                     if (unlock.checked) {
                         fieldDiv.style.display = '';
                         input.disabled = false;
-                        confirmDiv.style.display = '';
                     } else {
                         fieldDiv.style.display = 'none';
                         input.disabled = true;
                         input.value = " . (int) $currentvalue . ";
-                        confirmDiv.style.display = 'none';
-                        confirmBox.checked = false;
                     }
                 }
 

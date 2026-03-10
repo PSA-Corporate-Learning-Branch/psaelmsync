@@ -57,11 +57,17 @@ $feedbacktype = 'info';
 // Get filter values (persisted across requests).
 $filterfrom = optional_param('from', '', PARAM_TEXT);
 $filterto = optional_param('to', '', PARAM_TEXT);
+
+// Default display values for date pickers (today 06:00 to now).
+$defaultfrom = date('Y-m-d\T06:00');
+$defaultto = date('Y-m-d\TH:i');
+$displayfrom = !empty($filterfrom) ? $filterfrom : $defaultfrom;
+$displayto = !empty($filterto) ? $filterto : $defaultto;
+
 $filteremail = optional_param('email', '', PARAM_TEXT);
 $filterguid = optional_param('guid', '', PARAM_TEXT);
 $filtercourse = optional_param('course', '', PARAM_TEXT);
 $filterstate = optional_param('state', '', PARAM_ALPHA);
-$filterstatus = optional_param('status', '', PARAM_ALPHA);
 $filterfirstname = optional_param('firstname', '', PARAM_TEXT);
 $filterlastname = optional_param('lastname', '', PARAM_TEXT);
 $filteroprid = optional_param('oprid', '', PARAM_TEXT);
@@ -838,14 +844,6 @@ if (!empty($data['value'])) {
             $isenrolled
         );
 
-        // Apply status filter if set.
-        if (
-            !empty($filterstatus)
-            && $statusinfo['status'] !== $filterstatus
-        ) {
-            continue;
-        }
-
         $processedrecords[] = [
             'record' => $record,
             'user' => $user,
@@ -990,6 +988,15 @@ echo $OUTPUT->header();
     gap: 0.5rem;
     align-items: end;
 }
+.date-presets {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+}
+.date-presets .btn {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+}
 .results-summary {
     display: flex;
     gap: 1rem;
@@ -1106,25 +1113,69 @@ echo $OUTPUT->header();
 <!-- Enhanced Filter Form -->
 <div class="manual-intake-filters">
     <form method="get" action="<?php echo $PAGE->url; ?>">
+        <!-- Row 1: Date range -->
         <div class="row">
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <div class="form-group">
                     <label for="from">From Date</label>
                     <input type="datetime-local" id="from"
                            name="from"
                            class="form-control form-control-sm"
-                           value="<?php echo s($filterfrom); ?>">
+                           step="60"
+                           value="<?php echo s($displayfrom); ?>">
                 </div>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <div class="form-group">
                     <label for="to">To Date</label>
                     <input type="datetime-local" id="to"
                            name="to"
                            class="form-control form-control-sm"
-                           value="<?php echo s($filterto); ?>">
+                           step="60"
+                           value="<?php echo s($displayto); ?>">
                 </div>
             </div>
+            <div class="col-md-auto d-flex align-items-end">
+                <div class="date-presets mb-1" role="group"
+                     aria-label="Date range presets">
+                    <?php
+                    $today06 = date('Y-m-d\T06:00');
+                    $now = date('Y-m-d\TH:i');
+                    $yesterday06 = date(
+                        'Y-m-d\T06:00',
+                        strtotime('-1 day')
+                    );
+                    $weekago06 = date(
+                        'Y-m-d\T06:00',
+                        strtotime('-7 days')
+                    );
+                    ?>
+                    <button type="button"
+                            class="btn btn-outline-secondary btn-sm"
+                            data-from="<?php echo $today06; ?>"
+                            data-to="<?php echo $now; ?>"
+                            onclick="document.getElementById('from').value=this.dataset.from;
+                                     document.getElementById('to').value=this.dataset.to;">
+                        Today</button>
+                    <button type="button"
+                            class="btn btn-outline-secondary btn-sm"
+                            data-from="<?php echo $yesterday06; ?>"
+                            data-to="<?php echo $today06; ?>"
+                            onclick="document.getElementById('from').value=this.dataset.from;
+                                     document.getElementById('to').value=this.dataset.to;">
+                        Yesterday</button>
+                    <button type="button"
+                            class="btn btn-outline-secondary btn-sm"
+                            data-from="<?php echo $weekago06; ?>"
+                            data-to="<?php echo $now; ?>"
+                            onclick="document.getElementById('from').value=this.dataset.from;
+                                     document.getElementById('to').value=this.dataset.to;">
+                        Last 7 Days</button>
+                </div>
+            </div>
+        </div>
+        <!-- Row 2: Person lookup -->
+        <div class="row mt-2">
             <div class="col-md-2">
                 <div class="form-group">
                     <label for="firstname">First Name</label>
@@ -1147,7 +1198,7 @@ echo $OUTPUT->header();
                            ?>" placeholder="Haggett">
                 </div>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <div class="form-group">
                     <label for="email">Email</label>
                     <input type="email" id="email"
@@ -1169,8 +1220,6 @@ echo $OUTPUT->header();
                            ?>" placeholder="5F421FC1A510...">
                 </div>
             </div>
-        </div>
-        <div class="row mt-2">
             <div class="col-md-2">
                 <div class="form-group">
                     <label for="oprid">OPRID</label>
@@ -1182,6 +1231,9 @@ echo $OUTPUT->header();
                            ?>" placeholder="AHAGGETT">
                 </div>
             </div>
+        </div>
+        <!-- Row 3: Course, filters, actions -->
+        <div class="row mt-2">
             <div class="col-md-2">
                 <div class="form-group">
                     <label for="personid">PERSON_ID</label>
@@ -1221,37 +1273,8 @@ echo $OUTPUT->header();
                     </select>
                 </div>
             </div>
-            <div class="col-md-2">
-                <div class="form-group">
-                    <label for="status">Record Status</label>
-                    <select id="status" name="status"
-                            class="form-control form-control-sm">
-                        <option value="">All</option>
-                        <option value="ready" <?php
-                            echo $filterstatus === 'ready'
-                                ? 'selected' : '';
-                        ?>>Ready to Process</option>
-                        <option value="new_user" <?php
-                            echo $filterstatus === 'new_user'
-                                ? 'selected' : '';
-                        ?>>New User</option>
-                        <option value="mismatch" <?php
-                            echo $filterstatus === 'mismatch'
-                                ? 'selected' : '';
-                        ?>>Email Mismatch</option>
-                        <option value="blocked" <?php
-                            echo $filterstatus === 'blocked'
-                                ? 'selected' : '';
-                        ?>>Blocked</option>
-                        <option value="done" <?php
-                            echo $filterstatus === 'done'
-                                ? 'selected' : '';
-                        ?>>Already Done</option>
-                    </select>
-                </div>
-            </div>
-            <div class="col-md-2">
-                <div class="filter-actions">
+            <div class="col-md-2 d-flex align-items-end">
+                <div class="filter-actions mb-1">
                     <button type="submit"
                             class="btn btn-primary btn-sm">
                         Search CData</button>
@@ -1628,10 +1651,6 @@ echo $OUTPUT->header();
                             <input type="hidden" name="state"
                                    value="<?php
                                        echo s($filterstate);
-                                   ?>">
-                            <input type="hidden" name="status"
-                                   value="<?php
-                                       echo s($filterstatus);
                                    ?>">
                             <button type="submit" name="process"
                                     class="btn btn-sm btn-success">
