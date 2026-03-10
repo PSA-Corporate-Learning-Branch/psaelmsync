@@ -532,6 +532,14 @@ function create_user($firstname, $lastname, $email, $guid) {
     $user->confirmed = 1;
     // Use HTML email format.
     $user->emailformat = 1;
+    // Explicitly set optional profile fields to empty string to avoid
+    // inheriting non-empty column defaults from the database schema.
+    $user->institution = '';
+    $user->department = '';
+    $user->phone1 = '';
+    $user->phone2 = '';
+    $user->address = '';
+    $user->city = '';
     $user->timecreated = time();
     $user->timemodified = time();
 

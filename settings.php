@@ -97,5 +97,12 @@ if ($hassiteconfig) {
         PARAM_TEXT,
     ));
 
+    $settings->add(new \local_psaelmsync\admin\setting_highwatermark(
+        'local_psaelmsync/last_record_enrol_id',
+        get_string('last_record_enrol_id', 'local_psaelmsync'),
+        get_string('last_record_enrol_id_desc', 'local_psaelmsync'),
+        0,
+    ));
+
     $ADMIN->add('localplugins', $settings);
 }
