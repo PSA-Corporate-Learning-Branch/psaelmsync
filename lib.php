@@ -74,7 +74,7 @@ function local_psaelmsync_sync() {
     // High-water mark: only fetch records newer than the last one we processed.
     $lastrecordenrolid = get_config('local_psaelmsync', 'last_record_enrol_id');
     if ($lastrecordenrolid === false) {
-        $lastrecordenrolid = 0;
+        $lastrecordenrolid = 45975;
     }
     $apiurlfiltered = $apiurl
         . '?%24orderby=record_enrol_id+asc'

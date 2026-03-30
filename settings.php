@@ -93,7 +93,7 @@ if ($hassiteconfig) {
         'local_psaelmsync/last_record_enrol_id',
         get_string('last_record_enrol_id', 'local_psaelmsync'),
         get_string('last_record_enrol_id_desc', 'local_psaelmsync'),
-        0,
+        45975,
     ));
 
     $ADMIN->add('localplugins', $settings);
