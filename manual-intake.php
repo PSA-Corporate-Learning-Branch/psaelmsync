@@ -731,7 +731,7 @@ if ($hasfilters) {
     }
 
     $apiurlfiltered = $apiurl
-        . "?%24orderby=COURSE_STATE_DATE,date_created+asc";
+        . "?%24orderby=COURSE_STATE_DATE+desc,date_created+desc";
     if (!empty($filters)) {
         $apiurlfiltered .= "&%24filter="
             . implode("+and+", $filters);
