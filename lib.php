@@ -114,6 +114,30 @@ function local_psaelmsync_sync() {
     $skippedcount = 0;
     $maxrecordenrolid = (int)$lastrecordenrolid;
 
+    // ELM assigns record_enrol_id at batch-insert time, and COURSE_STATE_DATE
+    // has no sub-second precision. When an Enrol and Suspend for the same
+    // ENROLMENT_ID land in the same second, record_enrol_id can be assigned
+    // in reverse order. Force Enrol before Suspend for the same ENROLMENT_ID
+    // so a same-second pair within this batch is applied in the only
+    // logically valid order (you can't suspend an enrolment that doesn't
+    // exist yet).
+    if (!empty($data['value']) && is_array($data['value'])) {
+        usort($data['value'], function ($a, $b) {
+            if (
+                (int)($a['ENROLMENT_ID'] ?? 0) === (int)($b['ENROLMENT_ID'] ?? 0)
+                && ($a['COURSE_STATE'] ?? '') !== ($b['COURSE_STATE'] ?? '')
+            ) {
+                if (($a['COURSE_STATE'] ?? '') === 'Enrol') {
+                    return -1;
+                }
+                if (($b['COURSE_STATE'] ?? '') === 'Enrol') {
+                    return 1;
+                }
+            }
+            return (int)($a['record_enrol_id'] ?? 0) <=> (int)($b['record_enrol_id'] ?? 0);
+        });
+    }
+
     // This is the primary loop where we start to look at each record.
     foreach ($data['value'] as $record) {
         $recordcount++;
