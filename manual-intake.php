@@ -58,11 +58,9 @@ $feedbacktype = 'info';
 $filterfrom = optional_param('from', '', PARAM_TEXT);
 $filterto = optional_param('to', '', PARAM_TEXT);
 
-// Default display values for date pickers (today 06:00 to now).
-$defaultfrom = date('Y-m-d\T06:00');
-$defaultto = date('Y-m-d\TH:i');
-$displayfrom = !empty($filterfrom) ? $filterfrom : $defaultfrom;
-$displayto = !empty($filterto) ? $filterto : $defaultto;
+// Display values for date pickers (blank by default).
+$displayfrom = $filterfrom;
+$displayto = $filterto;
 
 $filteremail = optional_param('email', '', PARAM_TEXT);
 $filterguid = optional_param('guid', '', PARAM_TEXT);
@@ -252,15 +250,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
         $feedback = "Course ID "
             . s($elmcourseid)
             . " is on the ignore list and will not be processed.";
-        $feedbacktype = 'warning';
-    } else if (
-        $recordenrolid > 0 && $DB->record_exists_select(
-            'local_psaelmsync_logs',
-            "record_enrol_id = :rid AND status = 'Success'",
-            ['rid' => $recordenrolid]
-        )
-    ) {
-        $feedback = 'This record has already been processed.';
         $feedbacktype = 'warning';
     } else {
         $course = $DB->get_record(
@@ -1171,6 +1160,11 @@ echo $OUTPUT->header();
                             onclick="document.getElementById('from').value=this.dataset.from;
                                      document.getElementById('to').value=this.dataset.to;">
                         Last 7 Days</button>
+                    <button type="button"
+                            class="btn btn-outline-secondary btn-sm"
+                            onclick="document.getElementById('from').value='';
+                                     document.getElementById('to').value='';">
+                        Clear</button>
                 </div>
             </div>
         </div>
@@ -1539,7 +1533,6 @@ echo $OUTPUT->header();
                     ?></small>
                 </td>
                 <td>
-                    <?php if ($statusinfo['can_process']) : ?>
                         <form method="post"
                               action="<?php echo $PAGE->url; ?>"
                               class="d-inline process-form">
@@ -1659,10 +1652,6 @@ echo $OUTPUT->header();
                                 ?>
                             </button>
                         </form>
-                    <?php else : ?>
-                        <span class="text-muted">
-                            &mdash;</span>
-                    <?php endif; ?>
                 </td>
             </tr>
             <tr class="record-details"
