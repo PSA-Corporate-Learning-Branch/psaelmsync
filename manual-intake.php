@@ -240,6 +240,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
     $personid = optional_param('person_id', '', PARAM_TEXT);
     $activityid = optional_param('activity_id', '', PARAM_TEXT);
 
+    // Action value 'enrol_email' (default) sends welcome email; 'enrol_only' skips it.
+    $processaction = optional_param('process', '', PARAM_ALPHANUMEXT);
+    $sendwelcome = ($processaction !== 'enrol_only');
+
     // Compute hash for transition auditing (stored but no longer queried).
     $hash = hash('sha256', $recorddatecreated
         . $elmcourseid . $classcode
@@ -390,9 +394,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
                                 $feedback = "Successfully enrolled "
                                     . s($user->email) . " in "
                                     . s($course->fullname) . ".";
+                                if ($sendwelcome) {
+                                    send_welcome_email($user, $course);
+                                    $feedback .= " Welcome email sent.";
+                                } else {
+                                    $feedback .= " Welcome email skipped.";
+                                }
                                 $feedbacktype = 'success';
-
-                                send_welcome_email($user, $course);
                             } else {
                                 $feedback = "Failed to enrol "
                                     . s($user->email)
@@ -599,7 +607,6 @@ if (
             $log->timestamp = time();
 
             $DB->insert_record('local_psaelmsync_logs', $log);
-            send_welcome_email($user, $course);
             $successcount++;
         } else if ($coursestate === 'Suspend') {
             $manualenrol->update_user_enrol(
@@ -1645,12 +1652,32 @@ echo $OUTPUT->header();
                                    value="<?php
                                        echo s($filterstate);
                                    ?>">
-                            <button type="submit" name="process"
-                                    class="btn btn-sm btn-success">
-                                <?php
-                                echo $record['COURSE_STATE'];
-                                ?>
-                            </button>
+                            <?php if ($record['COURSE_STATE'] === 'Enrol') : ?>
+                                <div class="btn-group btn-group-sm"
+                                     role="group"
+                                     aria-label="Enrol options">
+                                    <button type="submit" name="process"
+                                            value="enrol_email"
+                                            class="btn btn-sm btn-success"
+                                            title="Enrol and send welcome email">
+                                        Enrol &amp; Email
+                                    </button>
+                                    <button type="submit" name="process"
+                                            value="enrol_only"
+                                            class="btn btn-sm btn-outline-success"
+                                            title="Enrol without sending welcome email">
+                                        Just Enrol
+                                    </button>
+                                </div>
+                            <?php else : ?>
+                                <button type="submit" name="process"
+                                        value="suspend"
+                                        class="btn btn-sm btn-success">
+                                    <?php
+                                    echo $record['COURSE_STATE'];
+                                    ?>
+                                </button>
+                            <?php endif; ?>
                         </form>
                 </td>
             </tr>
