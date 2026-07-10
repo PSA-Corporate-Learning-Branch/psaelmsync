@@ -127,6 +127,21 @@ Summary statistics for each sync run.
 | errorcount | Failed operations |
 | skippedcount | Records skipped (e.g. ignored courses) |
 
+## Privacy
+
+This plugin implements Moodle's Privacy API in `classes/privacy/provider.php`.
+Learner records in `local_psaelmsync_logs` are exposed for subject access
+exports and are deleted when approved erasure or retention requests apply.
+
+Sync log data is exported in the related course context. Log rows that are not
+attached to an existing course, such as course-not-found errors or orphaned
+historical rows, are exported in the system context. Erasing a learner's plugin
+data removes the matching sync log rows, including name, email, GUID, IDIR/OPRID,
+Person ID, ELM enrolment identifiers, and related course/action metadata.
+
+The plugin also declares the learner fields exchanged with the external
+CData/ELM integration for enrolment intake and completion reporting.
+
 ## Capabilities
 
 - `local/psaelmsync:viewlogs` - Required to access admin dashboards
