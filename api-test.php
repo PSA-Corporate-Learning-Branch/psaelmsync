@@ -31,7 +31,7 @@ require_once($CFG->libdir . '/filelib.php');
 require_login();
 
 $context = context_system::instance();
-require_capability('local/psaelmsync:viewlogs', $context);
+require_capability('local/psaelmsync:managedata', $context);
 
 $PAGE->set_url('/local/psaelmsync/api-test.php');
 $PAGE->set_context($context);
@@ -458,7 +458,7 @@ echo $OUTPUT->header();
             <li class="list-group-item list-group-item-<?php
                 echo $r['type'] === 'error' ? 'danger' : ($r['type'] === 'info' ? 'info' : 'success');
             ?>">
-                <?php echo $r['message']; ?>
+                <?php echo s($r['message']); ?>
             </li>
             <?php endforeach; ?>
         </ul>

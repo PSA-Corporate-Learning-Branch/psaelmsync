@@ -35,7 +35,7 @@ global $CFG, $DB, $PAGE, $OUTPUT;
 require_login();
 
 $context = context_system::instance();
-require_capability('local/psaelmsync:viewlogs', $context);
+require_capability('local/psaelmsync:managedata', $context);
 
 $PAGE->set_url('/local/psaelmsync/manual-intake.php');
 $PAGE->set_context($context);

@@ -125,6 +125,7 @@ $string['privacy:metadata:local_psaelmsync_logs:user_id'] = 'The Moodle user ID 
 $string['privacy:metadata:local_psaelmsync_logs:user_lastname'] = 'The learner last name.';
 $string['privacy:subcontext:sync_logs'] = 'PSALS sync logs';
 $string['process_course_completion'] = 'Process course completion.';
+$string['psaelmsync:managedata'] = 'Manage PSALS Sync data and configuration';
 $string['psaelmsync:viewlogs'] = 'View Dashboards';
 $string['queryapi'] = 'Manual Processing';
 $string['record_date_created'] = 'CData Created';
