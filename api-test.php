@@ -44,9 +44,10 @@ $PAGE->set_heading(get_string('apitest', 'local_psaelmsync'));
 // Test API endpoint — MUST use separate test API URL/token from plugin settings.
 $apitesturl = get_config('local_psaelmsync', 'test_apiurl');
 $apitesttoken = get_config('local_psaelmsync', 'test_apitoken');
+$hastestsettings = !empty($apitesturl) && !empty($apitesttoken);
 
 // Block access if test settings are not configured - never use production credentials.
-if (empty($apitesturl) || empty($apitesttoken)) {
+if (!$hastestsettings) {
     echo $OUTPUT->header();
     echo $OUTPUT->notification(
         'Test API settings are not configured. Please configure Test API URL and Test API Token in '

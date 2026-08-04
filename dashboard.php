@@ -34,6 +34,10 @@ global $DB;
 $context = context_system::instance();
 require_capability('local/psaelmsync:viewlogs', $context);
 
+// Check if test API settings are configured to conditionally show API Test tab.
+$hastestsettings = !empty(get_config('local_psaelmsync', 'test_apiurl')) &&
+                   !empty(get_config('local_psaelmsync', 'test_apitoken'));
+
 // Get search param early so we can include it in the page URL.
 $search = optional_param('search', '', PARAM_TEXT);
 
@@ -85,11 +89,13 @@ echo $OUTPUT->header();
                href="/local/psaelmsync/manual-complete.php">
                 Manual Complete</a>
         </li>
+        <?php if ($hastestsettings) : ?>
         <li class="nav-item">
             <a class="nav-link"
                href="/local/psaelmsync/api-test.php">
                 API Test</a>
         </li>
+        <?php endif; ?>
     </ul>
 </nav>
 <!-- Search Form -->

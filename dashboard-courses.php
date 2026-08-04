@@ -33,6 +33,10 @@ global $DB, $OUTPUT, $PAGE;
 $context = context_system::instance();
 require_capability('local/psaelmsync:viewlogs', $context);
 
+// Check if test API settings are configured to conditionally show API Test tab.
+$hastestsettings = !empty(get_config('local_psaelmsync', 'test_apiurl')) &&
+                   !empty(get_config('local_psaelmsync', 'test_apitoken'));
+
 $PAGE->set_url('/local/psaelmsync/dashboard-courses.php');
 $PAGE->set_context($context);
 $PAGE->set_title(
@@ -91,11 +95,13 @@ $courses = $DB->get_records_sql("
                href="/local/psaelmsync/manual-complete.php">
                 Manual Complete</a>
         </li>
+        <?php if ($hastestsettings) : ?>
         <li class="nav-item">
             <a class="nav-link"
                href="/local/psaelmsync/api-test.php">
                 API Test</a>
         </li>
+        <?php endif; ?>
     </ul>
 </nav>
 
