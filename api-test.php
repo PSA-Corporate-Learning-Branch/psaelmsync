@@ -41,14 +41,21 @@ $PAGE->set_title(
 );
 $PAGE->set_heading(get_string('apitest', 'local_psaelmsync'));
 
-// Test API endpoint — uses separate test API URL/token from plugin settings.
+// Test API endpoint — MUST use separate test API URL/token from plugin settings.
 $apitesturl = get_config('local_psaelmsync', 'test_apiurl');
 $apitesttoken = get_config('local_psaelmsync', 'test_apitoken');
 
-// Fall back to production settings if test settings not configured (for backwards compatibility).
+// Block access if test settings are not configured - never use production credentials.
 if (empty($apitesturl) || empty($apitesttoken)) {
-    $apitesturl = get_config('local_psaelmsync', 'apiurl');
-    $apitesttoken = get_config('local_psaelmsync', 'apitoken');
+    echo $OUTPUT->header();
+    echo $OUTPUT->notification(
+        'Test API settings are not configured. Please configure Test API URL and Test API Token in '
+        . html_writer::link(new moodle_url('/admin/settings.php?section=local_psaelmsync'), 'plugin settings')
+        . ' before using this page.',
+        'error'
+    );
+    echo $OUTPUT->footer();
+    exit;
 }
 
 // State file stored in Moodle's data directory (not web-accessible).
@@ -379,24 +386,8 @@ if ($action === 'generate' && confirm_sesskey()) {
 $state = apitest_load_state();
 $poolcount = count($state['enrolled']);
 
-// Check if the URL looks like a production endpoint.
-$isproduction = (stripos($apitesturl, 'test') === false);
-
 echo $OUTPUT->header();
 ?>
-
-<?php if ($isproduction) : ?>
-<div class="alert alert-danger d-flex align-items-center mb-3" role="alert">
-    <strong>WARNING:</strong>&nbsp;The API URL does not appear to be a test endpoint.
-    Please configure separate Test API settings in
-    <a href="/admin/settings.php?section=local_psaelmsync" style="color: inherit; text-decoration: underline;">
-        plugin settings
-    </a>
-    to avoid inserting test data into production.
-    <br>
-    <code><?php echo s($apitesturl); ?></code>
-</div>
-<?php endif; ?>
 
 <!-- Tabbed Navigation -->
 <nav aria-label="PSA ELM Sync sections">
@@ -594,20 +585,11 @@ echo $OUTPUT->header();
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    var isProduction = <?php echo $isproduction ? 'true' : 'false'; ?>;
-
     var generateForm = document.getElementById('apitest-generate-form');
     if (generateForm) {
         generateForm.addEventListener('submit', function(e) {
             var num = document.getElementById('num').value;
             var msg = 'Insert ' + num + ' test record(s) into the API?';
-            if (isProduction) {
-                msg = 'WARNING: The API URL does not appear to be a test endpoint.\n\n'
-                    + 'You are about to insert ' + num + ' fake enrolment '
-                    + 'record(s) using non-test credentials.\n\n'
-                    + 'Please configure separate Test API settings in plugin settings to avoid this.\n\n'
-                    + 'Are you absolutely sure?';
-            }
             if (!confirm(msg)) {
                 e.preventDefault();
             }
@@ -618,11 +600,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (cleanupForm) {
         cleanupForm.addEventListener('submit', function(e) {
             var msg = 'Delete all test records (@test.gov.bc.ca) from the API?';
-            if (isProduction) {
-                msg = 'WARNING: The API URL does not appear to be a test endpoint.\n\n'
-                    + 'Are you absolutely sure you want to delete records from non-test credentials?\n\n'
-                    + 'Please configure separate Test API settings in plugin settings to avoid this.';
-            }
             if (!confirm(msg)) {
                 e.preventDefault();
             }
