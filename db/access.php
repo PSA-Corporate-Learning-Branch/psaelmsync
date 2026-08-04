@@ -32,4 +32,11 @@ $capabilities = [
             'admin' => CAP_ALLOW,
         ],
     ],
+    'local/psaelmsync:managedata' => [
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_SYSTEM,
+        'archetypes' => [
+            'admin' => CAP_ALLOW,
+        ],
+    ],
 ];

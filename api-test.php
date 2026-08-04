@@ -31,7 +31,7 @@ require_once($CFG->libdir . '/filelib.php');
 require_login();
 
 $context = context_system::instance();
-require_capability('local/psaelmsync:viewlogs', $context);
+require_capability('local/psaelmsync:managedata', $context);
 
 $PAGE->set_url('/local/psaelmsync/api-test.php');
 $PAGE->set_context($context);
@@ -41,9 +41,23 @@ $PAGE->set_title(
 );
 $PAGE->set_heading(get_string('apitest', 'local_psaelmsync'));
 
-// Test API endpoint — uses the enrolment API URL/token from plugin settings.
-$apitesturl = get_config('local_psaelmsync', 'apiurl');
-$apitesttoken = get_config('local_psaelmsync', 'apitoken');
+// Test API endpoint — MUST use separate test API URL/token from plugin settings.
+$apitesturl = get_config('local_psaelmsync', 'test_apiurl');
+$apitesttoken = get_config('local_psaelmsync', 'test_apitoken');
+$hastestsettings = !empty($apitesturl) && !empty($apitesttoken);
+
+// Block access if test settings are not configured - never use production credentials.
+if (!$hastestsettings) {
+    echo $OUTPUT->header();
+    echo $OUTPUT->notification(
+        'Test API settings are not configured. Please configure Test API URL and Test API Token in '
+        . html_writer::link(new moodle_url('/admin/settings.php?section=local_psaelmsync'), 'plugin settings')
+        . ' before using this page.',
+        'error'
+    );
+    echo $OUTPUT->footer();
+    exit;
+}
 
 // State file stored in Moodle's data directory (not web-accessible).
 define('APITEST_STATE_FILE', $CFG->dataroot . '/psaelmsync_apitest_state.json');
@@ -373,22 +387,8 @@ if ($action === 'generate' && confirm_sesskey()) {
 $state = apitest_load_state();
 $poolcount = count($state['enrolled']);
 
-// Check if the URL looks like a production endpoint.
-$isproduction = (stripos($apitesturl, 'test') === false);
-
 echo $OUTPUT->header();
 ?>
-
-<?php if ($isproduction) : ?>
-<div class="alert alert-danger d-flex align-items-center mb-3" role="alert">
-    <strong>WARNING:</strong>&nbsp;The configured API URL does not contain
-    &ldquo;test&rdquo; &mdash; you may be pointing at a
-    <strong>PRODUCTION</strong> endpoint. Inserting test data into production
-    will create fake enrolment records that affect real learners.
-    <br>
-    <code><?php echo s($apitesturl); ?></code>
-</div>
-<?php endif; ?>
 
 <!-- Tabbed Navigation -->
 <nav aria-label="PSA ELM Sync sections">
@@ -431,6 +431,23 @@ echo $OUTPUT->header();
     </ul>
 </nav>
 
+<!-- Test API Configuration Info -->
+<div class="alert alert-info mb-3">
+    <strong>Test API Endpoint:</strong>
+    <code><?php echo s($apitesturl); ?></code>
+</div>
+<?php if (stripos($apitesturl, 'test') === false) : ?>
+<div class="alert alert-warning alert-dismissible fade show mb-3" role="alert">
+    <small>
+        <strong>⚠️ Warning:</strong> This URL does not appear to be a test endpoint (no "test" in URL).
+        Please verify this is the correct test API before proceeding.
+    </small>
+    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+        <span aria-hidden="true">&times;</span>
+    </button>
+</div>
+<?php endif; ?>
+
 <!-- Results -->
 <?php if (!empty($results)) : ?>
 <div class="mb-3">
@@ -458,7 +475,7 @@ echo $OUTPUT->header();
             <li class="list-group-item list-group-item-<?php
                 echo $r['type'] === 'error' ? 'danger' : ($r['type'] === 'info' ? 'info' : 'success');
             ?>">
-                <?php echo $r['message']; ?>
+                <?php echo s($r['message']); ?>
             </li>
             <?php endforeach; ?>
         </ul>
@@ -586,20 +603,11 @@ echo $OUTPUT->header();
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    var isProduction = <?php echo $isproduction ? 'true' : 'false'; ?>;
-
     var generateForm = document.getElementById('apitest-generate-form');
     if (generateForm) {
         generateForm.addEventListener('submit', function(e) {
             var num = document.getElementById('num').value;
             var msg = 'Insert ' + num + ' test record(s) into the API?';
-            if (isProduction) {
-                msg = 'WARNING: The API URL does not contain "test" — '
-                    + 'this looks like a PRODUCTION endpoint!\n\n'
-                    + 'You are about to insert ' + num + ' fake enrolment '
-                    + 'record(s) into what may be a live system.\n\n'
-                    + 'Are you absolutely sure?';
-            }
             if (!confirm(msg)) {
                 e.preventDefault();
             }
@@ -610,11 +618,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (cleanupForm) {
         cleanupForm.addEventListener('submit', function(e) {
             var msg = 'Delete all test records (@test.gov.bc.ca) from the API?';
-            if (isProduction) {
-                msg = 'WARNING: The API URL does not contain "test" — '
-                    + 'this looks like a PRODUCTION endpoint!\n\n'
-                    + 'Are you absolutely sure you want to delete records?';
-            }
             if (!confirm(msg)) {
                 e.preventDefault();
             }

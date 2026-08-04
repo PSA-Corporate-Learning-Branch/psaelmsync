@@ -26,20 +26,40 @@ require_once('../../config.php');
 require_login();
 
 $context = context_system::instance();
-require_capability('local/psaelmsync:viewlogs', $context);
+require_capability('local/psaelmsync:managedata', $context);
 
 $PAGE->set_url('/local/psaelmsync/trigger_sync.php');
 $PAGE->set_context($context);
 $PAGE->set_title('Trigger PSA Enrol Sync');
 
+// Handle form submission.
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Verify sesskey for CSRF protection.
+    require_sesskey();
+
+    require_once($CFG->dirroot . '/local/psaelmsync/lib.php');
+
+    // Call the sync function.
+    local_psaelmsync_sync();
+
+    echo $OUTPUT->header();
+    echo $OUTPUT->heading('Trigger PSA Enrol Sync');
+    echo $OUTPUT->notification('PSA Enrol Sync has been triggered.', 'notifysuccess');
+    echo $OUTPUT->footer();
+    exit;
+}
+
+// Display confirmation form.
 echo $OUTPUT->header();
 echo $OUTPUT->heading('Trigger PSA Enrol Sync');
 
-require_once($CFG->dirroot . '/local/psaelmsync/lib.php');
+echo html_writer::start_tag('p');
+echo 'This will trigger an immediate synchronization of enrolment data from the ELM system.';
+echo html_writer::end_tag('p');
 
-// Call the sync function.
-local_psaelmsync_sync();
-
-echo $OUTPUT->notification('PSA Enrol Sync has been triggered.', 'notifysuccess');
+echo html_writer::start_tag('form', ['method' => 'post', 'action' => 'trigger_sync.php']);
+echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+echo html_writer::tag('button', 'Trigger Sync', ['type' => 'submit', 'class' => 'btn btn-primary']);
+echo html_writer::end_tag('form');
 
 echo $OUTPUT->footer();
