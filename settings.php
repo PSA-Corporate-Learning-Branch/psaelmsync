@@ -27,6 +27,14 @@ defined('MOODLE_INTERNAL') || die();
 if ($hassiteconfig) {
     $settings = new admin_settingpage('local_psaelmsync', get_string('pluginname', 'local_psaelmsync'));
 
+    // Add version heading at the top.
+    $pluginversion = get_config('local_psaelmsync', 'version');
+    $settings->add(new admin_setting_heading(
+        'local_psaelmsync/version',
+        'Version',
+        'Build: ' . ($pluginversion ? $pluginversion : 'unknown'),
+    ));
+
     $settings->add(new admin_setting_heading(
         'local_psaelmsync/dashboard',
         get_string('logs', 'local_psaelmsync'),
