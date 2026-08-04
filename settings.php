@@ -27,22 +27,17 @@ defined('MOODLE_INTERNAL') || die();
 if ($hassiteconfig) {
     $settings = new admin_settingpage('local_psaelmsync', get_string('pluginname', 'local_psaelmsync'));
 
-    // Add version heading at the top.
+    // Get version info to display.
     $pluginmanager = \core_plugin_manager::instance();
     $plugininfo = $pluginmanager->get_plugin_info('local_psaelmsync');
     $release = $plugininfo ? $plugininfo->release : 'unknown';
     $build = get_config('local_psaelmsync', 'version') ?: 'unknown';
     $versioninfo = "Release: {$release} | Build: {$build}";
-    $settings->add(new admin_setting_heading(
-        'local_psaelmsync/version',
-        'Version',
-        $versioninfo,
-    ));
 
     $settings->add(new admin_setting_heading(
         'local_psaelmsync/dashboard',
         get_string('logs', 'local_psaelmsync'),
-        html_writer::link(
+        $versioninfo . '<br>' . html_writer::link(
             new moodle_url('/local/psaelmsync/dashboard.php'),
             get_string('viewlogs', 'local_psaelmsync')
         ),
