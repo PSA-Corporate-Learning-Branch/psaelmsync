@@ -73,27 +73,6 @@ if ($hassiteconfig) {
         '',
     ));
 
-    $settings->add(new admin_setting_heading(
-        'local_psaelmsync/apitest_heading',
-        get_string('apitest', 'local_psaelmsync'),
-        get_string('apitest_settings_desc', 'local_psaelmsync'),
-    ));
-
-    $settings->add(new admin_setting_configtext(
-        'local_psaelmsync/test_apiurl',
-        get_string('test_apiurl', 'local_psaelmsync'),
-        get_string('test_apiurl_desc', 'local_psaelmsync'),
-        '',
-        PARAM_URL,
-    ));
-
-    $settings->add(new admin_setting_configpasswordunmask(
-        'local_psaelmsync/test_apitoken',
-        get_string('test_apitoken', 'local_psaelmsync'),
-        get_string('test_apitoken_desc', 'local_psaelmsync'),
-        '',
-    ));
-
     $settings->add(new admin_setting_configtext(
         'local_psaelmsync/notificationemails',
         get_string('notificationemails', 'local_psaelmsync'),
