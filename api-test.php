@@ -436,6 +436,17 @@ echo $OUTPUT->header();
     <strong>Test API Endpoint:</strong>
     <code><?php echo s($apitesturl); ?></code>
 </div>
+<?php if (stripos($apitesturl, 'test') === false) : ?>
+<div class="alert alert-warning alert-dismissible fade show mb-3" role="alert">
+    <small>
+        <strong>⚠️ Warning:</strong> This URL does not appear to be a test endpoint (no "test" in URL).
+        Please verify this is the correct test API before proceeding.
+    </small>
+    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+        <span aria-hidden="true">&times;</span>
+    </button>
+</div>
+<?php endif; ?>
 
 <!-- Results -->
 <?php if (!empty($results)) : ?>
