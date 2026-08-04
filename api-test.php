@@ -431,6 +431,12 @@ echo $OUTPUT->header();
     </ul>
 </nav>
 
+<!-- Test API Configuration Info -->
+<div class="alert alert-info mb-3">
+    <strong>Test API Endpoint:</strong>
+    <code><?php echo s($apitesturl); ?></code>
+</div>
+
 <!-- Results -->
 <?php if (!empty($results)) : ?>
 <div class="mb-3">
