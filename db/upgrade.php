@@ -127,17 +127,5 @@ function xmldb_local_psaelmsync_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026030501, 'local', 'psaelmsync');
     }
 
-    // Add notes column to local_psaelmsync_logs.
-    if ($oldversion < 2026080401) {
-        $table = new xmldb_table('local_psaelmsync_logs');
-        $field = new xmldb_field('notes', XMLDB_TYPE_TEXT, null, null, false, null, null, 'timestamp');
-
-        if (!$dbman->field_exists($table, $field)) {
-            $dbman->add_field($table, $field);
-        }
-
-        upgrade_plugin_savepoint(true, 2026080401, 'local', 'psaelmsync');
-    }
-
     return true;
 }

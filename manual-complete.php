@@ -40,7 +40,7 @@ require_once($CFG->dirroot . '/local/psaelmsync/lib.php');
 require_login();
 
 $context = context_system::instance();
-require_capability('local/psaelmsync:managedata', $context);
+require_capability('local/psaelmsync:viewlogs', $context);
 
 $PAGE->set_url('/local/psaelmsync/manual-complete.php');
 $PAGE->set_context($context);

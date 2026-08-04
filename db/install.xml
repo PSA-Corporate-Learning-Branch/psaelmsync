@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="local/psaelmsync/db" VERSION="2026080401" COMMENT="PSA Enrol Sync plugin">
+<XMLDB PATH="local/psaelmsync/db" VERSION="2023080201" COMMENT="PSA Enrol Sync plugin">
 <TABLES>
     <TABLE NAME="local_psaelmsync_logs" COMMENT="Logs for PSA ELM Sync plugin">
         <FIELDS>
@@ -24,7 +24,6 @@
             <FIELD NAME="action" TYPE="char" LENGTH="100" NOTNULL="true" COMMENT="Action (enrolled, suspended)"/>
             <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" COMMENT="Status (success, error)"/>
             <FIELD NAME="timestamp" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="Timestamp"/>
-            <FIELD NAME="notes" TYPE="text" NOTNULL="false" COMMENT="Additional notes about the operation"/>
         </FIELDS>
         <KEYS>
             <KEY NAME="primary" TYPE="primary" FIELDS="id"/>

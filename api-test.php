@@ -31,7 +31,7 @@ require_once($CFG->libdir . '/filelib.php');
 require_login();
 
 $context = context_system::instance();
-require_capability('local/psaelmsync:managedata', $context);
+require_capability('local/psaelmsync:viewlogs', $context);
 
 $PAGE->set_url('/local/psaelmsync/api-test.php');
 $PAGE->set_context($context);
@@ -41,20 +41,9 @@ $PAGE->set_title(
 );
 $PAGE->set_heading(get_string('apitest', 'local_psaelmsync'));
 
-// Test API endpoint — uses separate test API URL/token from plugin settings.
-$apitesturl = get_config('local_psaelmsync', 'test_apiurl');
-$apitesttoken = get_config('local_psaelmsync', 'test_apitoken');
-
-// Check if test API settings are configured.
-if (empty($apitesturl) || empty($apitesttoken)) {
-    echo $OUTPUT->header();
-    echo $OUTPUT->notification(
-        get_string('apitest_not_configured', 'local_psaelmsync'),
-        'error'
-    );
-    echo $OUTPUT->footer();
-    exit;
-}
+// Test API endpoint — uses the enrolment API URL/token from plugin settings.
+$apitesturl = get_config('local_psaelmsync', 'apiurl');
+$apitesttoken = get_config('local_psaelmsync', 'apitoken');
 
 // State file stored in Moodle's data directory (not web-accessible).
 define('APITEST_STATE_FILE', $CFG->dataroot . '/psaelmsync_apitest_state.json');
@@ -469,7 +458,7 @@ echo $OUTPUT->header();
             <li class="list-group-item list-group-item-<?php
                 echo $r['type'] === 'error' ? 'danger' : ($r['type'] === 'info' ? 'info' : 'success');
             ?>">
-                <?php echo s($r['message']); ?>
+                <?php echo $r['message']; ?>
             </li>
             <?php endforeach; ?>
         </ul>
