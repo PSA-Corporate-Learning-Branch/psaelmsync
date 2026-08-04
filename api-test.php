@@ -41,9 +41,15 @@ $PAGE->set_title(
 );
 $PAGE->set_heading(get_string('apitest', 'local_psaelmsync'));
 
-// Test API endpoint — uses the enrolment API URL/token from plugin settings.
-$apitesturl = get_config('local_psaelmsync', 'apiurl');
-$apitesttoken = get_config('local_psaelmsync', 'apitoken');
+// Test API endpoint — uses separate test API URL/token from plugin settings.
+$apitesturl = get_config('local_psaelmsync', 'test_apiurl');
+$apitesttoken = get_config('local_psaelmsync', 'test_apitoken');
+
+// Fall back to production settings if test settings not configured (for backwards compatibility).
+if (empty($apitesturl) || empty($apitesttoken)) {
+    $apitesturl = get_config('local_psaelmsync', 'apiurl');
+    $apitesttoken = get_config('local_psaelmsync', 'apitoken');
+}
 
 // State file stored in Moodle's data directory (not web-accessible).
 define('APITEST_STATE_FILE', $CFG->dataroot . '/psaelmsync_apitest_state.json');
@@ -381,10 +387,12 @@ echo $OUTPUT->header();
 
 <?php if ($isproduction) : ?>
 <div class="alert alert-danger d-flex align-items-center mb-3" role="alert">
-    <strong>WARNING:</strong>&nbsp;The configured API URL does not contain
-    &ldquo;test&rdquo; &mdash; you may be pointing at a
-    <strong>PRODUCTION</strong> endpoint. Inserting test data into production
-    will create fake enrolment records that affect real learners.
+    <strong>WARNING:</strong>&nbsp;The API URL does not appear to be a test endpoint.
+    Please configure separate Test API settings in
+    <a href="/admin/settings.php?section=local_psaelmsync" style="color: inherit; text-decoration: underline;">
+        plugin settings
+    </a>
+    to avoid inserting test data into production.
     <br>
     <code><?php echo s($apitesturl); ?></code>
 </div>
@@ -594,10 +602,10 @@ document.addEventListener('DOMContentLoaded', function() {
             var num = document.getElementById('num').value;
             var msg = 'Insert ' + num + ' test record(s) into the API?';
             if (isProduction) {
-                msg = 'WARNING: The API URL does not contain "test" — '
-                    + 'this looks like a PRODUCTION endpoint!\n\n'
+                msg = 'WARNING: The API URL does not appear to be a test endpoint.\n\n'
                     + 'You are about to insert ' + num + ' fake enrolment '
-                    + 'record(s) into what may be a live system.\n\n'
+                    + 'record(s) using non-test credentials.\n\n'
+                    + 'Please configure separate Test API settings in plugin settings to avoid this.\n\n'
                     + 'Are you absolutely sure?';
             }
             if (!confirm(msg)) {
@@ -611,9 +619,9 @@ document.addEventListener('DOMContentLoaded', function() {
         cleanupForm.addEventListener('submit', function(e) {
             var msg = 'Delete all test records (@test.gov.bc.ca) from the API?';
             if (isProduction) {
-                msg = 'WARNING: The API URL does not contain "test" — '
-                    + 'this looks like a PRODUCTION endpoint!\n\n'
-                    + 'Are you absolutely sure you want to delete records?';
+                msg = 'WARNING: The API URL does not appear to be a test endpoint.\n\n'
+                    + 'Are you absolutely sure you want to delete records from non-test credentials?\n\n'
+                    + 'Please configure separate Test API settings in plugin settings to avoid this.';
             }
             if (!confirm(msg)) {
                 e.preventDefault();
