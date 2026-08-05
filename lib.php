@@ -28,6 +28,62 @@ global $CFG;
 require_once($CFG->libdir . '/filelib.php');
 
 /**
+ * Get (or lazily create) the per-site secret used to sign round-tripped payloads.
+ *
+ * Never expose this value in any output. It exists only so the server can prove that a
+ * payload it receives back from a browser is one it issued itself.
+ *
+ * @return string A 64-character hex secret.
+ */
+function local_psaelmsync_get_payload_key() {
+    $key = get_config('local_psaelmsync', 'payload_hmac_key');
+    if (empty($key)) {
+        $key = bin2hex(random_bytes(32));
+        set_config('payload_hmac_key', $key, 'local_psaelmsync');
+    }
+    return $key;
+}
+
+/**
+ * Sign a record payload so it can be safely round-tripped through the browser.
+ *
+ * The enrolment data rendered into the bulk-processing form drives account creation and
+ * enrolment, so it must not be accepted back from the client unless the server issued it.
+ *
+ * @param array $data The record fields to sign.
+ * @return string A signed token of the form "<base64 payload>.<hmac>".
+ */
+function local_psaelmsync_sign_payload(array $data) {
+    $payload = base64_encode(json_encode($data));
+    $mac = hash_hmac('sha256', $payload, local_psaelmsync_get_payload_key());
+    return $payload . '.' . $mac;
+}
+
+/**
+ * Verify and decode a payload previously signed by local_psaelmsync_sign_payload().
+ *
+ * @param string $token The signed token submitted by the client.
+ * @return array|null The decoded record fields, or null if the token is missing,
+ *                    malformed, tampered with, or not valid JSON.
+ */
+function local_psaelmsync_verify_payload($token) {
+    if (!is_string($token) || substr_count($token, '.') !== 1) {
+        return null;
+    }
+
+    [$payload, $mac] = explode('.', $token, 2);
+    $expected = hash_hmac('sha256', $payload, local_psaelmsync_get_payload_key());
+
+    // Constant-time comparison: never leak how much of the signature matched.
+    if (!hash_equals($expected, $mac)) {
+        return null;
+    }
+
+    $decoded = json_decode(base64_decode($payload), true);
+    return is_array($decoded) ? $decoded : null;
+}
+
+/**
  * Check if a given ELM course ID is on the ignore list.
  *
  * @param int|string $elmcourseid The COURSE_IDENTIFIER value to check.

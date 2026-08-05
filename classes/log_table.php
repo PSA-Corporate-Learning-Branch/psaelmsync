@@ -161,4 +161,37 @@ class log_table extends \table_sql {
     public function col_timestamp($values) {
         return date('Y-m-d H:i:s', $values->timestamp);
     }
+
+    /**
+     * Format the CData creation date column.
+     *
+     * This value is stored verbatim from the upstream API response into a char(100)
+     * column, so it must be escaped before rendering.
+     *
+     * @param object $values The row data object.
+     * @return string The escaped creation date string.
+     */
+    public function col_record_date_created($values) {
+        return s($values->record_date_created);
+    }
+
+    /**
+     * Format the person ID column.
+     *
+     * @param object $values The row data object.
+     * @return string The escaped person ID.
+     */
+    public function col_person_id($values) {
+        return s($values->person_id);
+    }
+
+    /**
+     * Format the ELM enrolment ID column.
+     *
+     * @param object $values The row data object.
+     * @return string The escaped ELM enrolment ID.
+     */
+    public function col_elm_enrolment_id($values) {
+        return s($values->elm_enrolment_id);
+    }
 }

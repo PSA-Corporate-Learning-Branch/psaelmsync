@@ -1,3 +1,18 @@
-.test_enrolments_state.json
 /vendor/
 composer.lock
+
+# Runtime state. These belong in $CFG->dataroot, never in the plugin directory --
+# anything here is served as static content by the webserver.
+.apitest_state.json
+.test_enrolments_state.json
+*.state.json
+
+# Editor and tooling leftovers. A .backup/.bak/.orig copy of a .php file is NOT
+# parsed by PHP, so the webserver would serve its source in cleartext.
+*.backup
+*.bak
+*.orig
+*.rej
+*.swp
+*~
+.DS_Store

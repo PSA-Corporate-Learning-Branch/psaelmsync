@@ -487,9 +487,12 @@ if (
     $errors = [];
 
     foreach ($selectedrecords as $encodedrecord) {
-        $recorddata = json_decode(base64_decode($encodedrecord), true);
-        if (!$recorddata) {
+        // Only process payloads this server signed. An unsigned or altered payload would
+        // otherwise let the submitter create an arbitrary account and enrol it anywhere.
+        $recorddata = local_psaelmsync_verify_payload($encodedrecord);
+        if ($recorddata === null) {
             $errorcount++;
+            $errors[] = 'Rejected a record whose signature was missing or invalid';
             continue;
         }
 
@@ -1429,8 +1432,9 @@ echo $OUTPUT->header();
             $statusinfo = $pr['status_info'];
             $isenrolled = $pr['is_enrolled'];
 
-            // Encode record data for bulk processing.
-            $recorddata = base64_encode(json_encode([
+            // Encode and sign record data for bulk processing. The signature lets the
+            // POST handler prove this payload is one we issued rather than a forgery.
+            $recorddata = local_psaelmsync_sign_payload([
                 'date_created' => $record['date_created'],
                 'course_state' => $record['COURSE_STATE'],
                 'elm_course_id' => $record['COURSE_IDENTIFIER'],
@@ -1444,7 +1448,7 @@ echo $OUTPUT->header();
                 'oprid' => $record['OPRID'] ?? '',
                 'person_id' => $record['PERSON_ID'] ?? '',
                 'activity_id' => $record['ACTIVITY_ID'] ?? '',
-            ]));
+            ]);
 
             $rowlabel = htmlspecialchars(
                 $record['FIRST_NAME'] . ' '
@@ -1466,7 +1470,7 @@ echo $OUTPUT->header();
                     <?php if ($statusinfo['can_process']) : ?>
                     <input type="checkbox"
                            name="selected_records[]"
-                           value="<?php echo $recorddata; ?>"
+                           value="<?php echo s($recorddata); ?>"
                            class="record-checkbox" checked>
                     <?php endif; ?>
                 </td>

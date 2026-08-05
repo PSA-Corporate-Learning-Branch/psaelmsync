@@ -25,14 +25,21 @@
 defined('MOODLE_INTERNAL') || die();
 
 $capabilities = [
+    // The dashboards display learner names, email addresses, GUIDs, IDIR/OPRIDs and
+    // government PERSON_IDs, so holding this is enough to read personal data in bulk.
     'local/psaelmsync:viewlogs' => [
+        'riskbitmask' => RISK_PERSONAL,
         'captype' => 'read',
         'contextlevel' => CONTEXT_SYSTEM,
         'archetypes' => [
             'admin' => CAP_ALLOW,
         ],
     ],
+    // This permits creating Moodle accounts, enrolling and suspending users, sending
+    // welcome mail, and pushing completion records into an external system of record --
+    // none of which is obvious from the capability name alone.
     'local/psaelmsync:managedata' => [
+        'riskbitmask' => RISK_PERSONAL | RISK_SPAM | RISK_DATALOSS,
         'captype' => 'write',
         'contextlevel' => CONTEXT_SYSTEM,
         'archetypes' => [
