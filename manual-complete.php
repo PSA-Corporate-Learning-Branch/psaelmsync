@@ -314,6 +314,29 @@ function get_enrolment_record($elmcourseid, $userid) {
 }
 
 /**
+ * Check whether a course has the completion_opt_in custom field enabled.
+ *
+ * The wizard only lists opted-in courses, but the POST handler receives a course_id
+ * from the request and must not rely on the UI having filtered it.
+ *
+ * @param int $courseid The Moodle course ID.
+ * @return bool True if completion reporting is enabled for this course.
+ */
+function course_has_completion_optin($courseid) {
+    global $DB;
+
+    return $DB->record_exists_sql(
+        "SELECT 1
+           FROM {customfield_data} cd
+           JOIN {customfield_field} cf ON cf.id = cd.fieldid
+          WHERE cf.shortname = 'completion_opt_in'
+            AND cd.intvalue = 1
+            AND cd.instanceid = :courseid",
+        ['courseid' => $courseid]
+    );
+}
+
+/**
  * Post completion to CData API.
  *
  * @param object $user The Moodle user object.
@@ -332,8 +355,21 @@ function post_completion_to_cdata($user, $course, $enrolmentrecord) {
     $classcode = $enrolmentrecord->class_code;
     $sha256hash = $enrolmentrecord->sha256hash;
 
+    // Send the date the learner actually completed the course, not the moment the
+    // operator pressed the button. This page exists to replay completions the observer
+    // failed to deliver, so those are precisely the cases where the two differ -- and
+    // the value lands in an external HR system of record.
+    $timecompleted = $DB->get_field(
+        'course_completions',
+        'timecompleted',
+        ['course' => $course->id, 'userid' => $user->id]
+    );
+    $completedate = !empty($timecompleted)
+        ? date('Y-m-d', $timecompleted)
+        : date('Y-m-d');
+
     $data = [
-        'COURSE_COMPLETE_DATE' => date('Y-m-d'),
+        'COURSE_COMPLETE_DATE' => $completedate,
         'COURSE_STATE' => 'Complete',
         'ENROLMENT_ID' => (int) $elmenrolmentid,
         'USER_STATE' => 'Active',
@@ -444,7 +480,20 @@ if (
         $user->id
     );
 
-    if (!$enrolmentrecord) {
+    // Re-apply the checks the wizard applies when building its lists. course_id and
+    // user_id arrive from the request, so the UI having filtered them proves nothing:
+    // a course whose completion_opt_in was deliberately turned off could otherwise
+    // still have completions pushed to ELM.
+    if (!course_has_completion_optin($course->id)) {
+        $feedback = "Cannot post completion: completion reporting is not enabled"
+            . " for " . s($course->fullname) . " (completion_opt_in is off).";
+        $feedbacktype = 'danger';
+    } else if (!is_enrolled(context_course::instance($course->id), $user->id)) {
+        $feedback = "Cannot post completion: " . s($user->firstname) . " "
+            . s($user->lastname) . " is not enrolled in "
+            . s($course->fullname) . ".";
+        $feedbacktype = 'danger';
+    } else if (!$enrolmentrecord) {
         $feedback = "Cannot post completion: No enrolment record found"
             . " in sync logs for this user/course combination.";
         $feedbacktype = 'danger';

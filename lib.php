@@ -138,26 +138,63 @@ function local_psaelmsync_sync() {
         . '+and+USER_STATE+eq+%27ACTIVE%27';
 
     // Make API call.
+    // NOTE: curl::get() is get($url, $params, $options). Passing $options in the
+    // second slot appends them to the query string and sets no curl option at all,
+    // which silently disabled FAILONERROR and made HTTP 401/403/502 look like success.
     $options = [
         'RETURNTRANSFER' => 1,
         'HEADER' => 0,
         'FAILONERROR' => 1,
+        'CONNECTTIMEOUT' => 10,
+        'TIMEOUT' => 120,
     ];
     $header = ['x-cdata-authtoken: ' . $apitoken];
     $curl = new curl();
     $curl->setHeader($header);
-    $response = $curl->get($apiurlfiltered, $options);
 
-    if ($curl->get_errno()) {
-        mtrace('PSA Enrol Sync: API request failed: '
-            . $apiurlfiltered);
-        return;
+    // Follow OData paging. Without this, a response larger than the endpoint's page
+    // size was silently truncated while the high-water mark still advanced past the
+    // records we never saw, skipping them permanently.
+    $apirecords = [];
+    $nexturl = $apiurlfiltered;
+    $page = 0;
+    $maxpages = 50;
+
+    while ($nexturl !== null && $page < $maxpages) {
+        $page++;
+        $response = $curl->get($nexturl, [], $options);
+
+        $info = $curl->get_info();
+        $httpcode = (int)($info['http_code'] ?? 0);
+        if ($curl->get_errno() || $httpcode >= 400) {
+            // Abort the whole run and process nothing. The high-water mark is not
+            // advanced below, so the next run retries this window from the same point.
+            mtrace('PSA Enrol Sync: API request failed on page ' . $page
+                . ' (HTTP ' . $httpcode . ', errno ' . $curl->get_errno() . '): '
+                . $apiurl);
+            local_psaelmsync_notify_api_failure($httpcode, $curl->get_errno(), $page);
+            return;
+        }
+
+        $data = json_decode($response, true);
+        if (!is_array($data) || !isset($data['value']) || !is_array($data['value'])) {
+            mtrace('PSA Enrol Sync: Unexpected API response shape on page ' . $page
+                . ' (' . json_last_error_msg() . ').');
+            return;
+        }
+
+        $apirecords = array_merge($apirecords, $data['value']);
+        $nexturl = isset($data['@odata.nextLink']) ? $data['@odata.nextLink'] : null;
     }
 
-    $data = json_decode($response, true);
+    if ($nexturl !== null) {
+        mtrace('PSA Enrol Sync: WARNING stopped at the ' . $maxpages
+            . '-page safety limit with more pages available. Remaining records will be'
+            . ' picked up next run only if the high-water mark did not advance past them.');
+    }
 
-    if (empty($data)) {
-        mtrace('PSA Enrol Sync: No data received from API (empty or invalid JSON response).');
+    if (empty($apirecords)) {
+        mtrace('PSA Enrol Sync: No records returned from API.');
         return;
     }
 
@@ -169,9 +206,10 @@ function local_psaelmsync_sync() {
     $errorcount = 0;
     $skippedcount = 0;
     $maxrecordenrolid = (int)$lastrecordenrolid;
+    $minfailedid = null;
 
     // This is the primary loop where we start to look at each record.
-    foreach ($data['value'] as $record) {
+    foreach ($apirecords as $record) {
         $recordcount++;
         // Track the highest record_enrol_id seen in this batch.
         $recordenrolid = (int)($record['record_enrol_id'] ?? 0);
@@ -181,11 +219,29 @@ function local_psaelmsync_sync() {
         // Process each record and return the enrolment type for logging.
         $action = process_enrolment_record($record);
         $typecounts[] = $action;
+
+        // Remember the lowest ID that failed so we do not advance past it below.
+        // 'Skipped' is a deliberate outcome (ignored course, already processed) and
+        // does not need retrying, so it is not treated as a failure here.
+        if (
+            $action === 'Error' && $recordenrolid > 0
+            && ($minfailedid === null || $recordenrolid < $minfailedid)
+        ) {
+            $minfailedid = $recordenrolid;
+        }
     }
 
-    // Update the high-water mark so the next run starts after this batch.
-    if ($maxrecordenrolid > (int)$lastrecordenrolid) {
-        set_config('last_record_enrol_id', $maxrecordenrolid, 'local_psaelmsync');
+    // Update the high-water mark so the next run starts after this batch, but never
+    // move it past a record that failed: the mark is the only thing that decides what
+    // gets fetched next time, so advancing over a failure skips that learner forever.
+    $newmark = ($minfailedid !== null) ? ($minfailedid - 1) : $maxrecordenrolid;
+    if ($newmark > (int)$lastrecordenrolid) {
+        set_config('last_record_enrol_id', $newmark, 'local_psaelmsync');
+    }
+    if ($minfailedid !== null) {
+        mtrace('PSA Enrol Sync: holding high-water mark at ' . $newmark
+            . ' because record_enrol_id ' . $minfailedid . ' failed;'
+            . ' records from that point will be retried next run.');
     }
 
     // Loop through to pull out how many enrols and drops etc. respectively.
@@ -472,29 +528,125 @@ function process_enrolment_record($record) {
 
     if ($enrolmentstatus == 'Enrol') {
         // Enrol the user in the course.
+        // Previously this used MUST_EXIST, so a course with no manual enrolment
+        // instance threw an uncaught dml_missing_record_exception and killed the whole
+        // run. And when enrol_get_plugin() returned null the block was skipped
+        // entirely, yet execution still fell through to log 'Success' and send a
+        // welcome email to someone who had not been enrolled.
         $enrol = enrol_get_plugin('manual');
-        if ($enrol) {
-            $instance = $DB->get_record(
-                'enrol',
-                ['courseid' => $course->id, 'enrol' => 'manual'],
-                '*',
-                MUST_EXIST
-            );
-            // Check if user is already actively enrolled before enrolling.
-            $alreadyenrolled = $DB->record_exists_sql(
-                "SELECT 1 FROM {user_enrolments} ue
-                  WHERE ue.enrolid = :enrolid AND ue.userid = :userid AND ue.status = :status",
-                ['enrolid' => $instance->id, 'userid' => $userid, 'status' => ENROL_USER_ACTIVE]
+        $instance = $enrol ? $DB->get_record(
+            'enrol',
+            ['courseid' => $course->id, 'enrol' => 'manual'],
+            '*',
+            IGNORE_MISSING
+        ) : false;
+
+        if (!$enrol || !$instance) {
+            $message = !$enrol
+                ? 'The manual enrolment plugin is disabled site-wide.'
+                : "Course {$course->id} ({$classcode}) has no manual enrolment instance.";
+            mtrace('PSA Enrol Sync: ' . $message);
+
+            log_record(
+                $recordid,
+                $hash,
+                $recorddatecreated,
+                $course->id,
+                $elmcourseid,
+                $classcode,
+                $enrolmentid,
+                $userid,
+                $firstname,
+                $lastname,
+                $useremail,
+                $userguid,
+                $useroprid,
+                $userpersonid,
+                $useractivityid,
+                'Enrol',
+                'Error',
+                $recordenrolid
             );
 
-            $enrol->enrol_user(
-                $instance,
-                $userid,
-                $instance->roleid,
-                0,
-                0,
-                ENROL_USER_ACTIVE
+            send_failure_notification(
+                'enrolfail',
+                $firstname,
+                $lastname,
+                $courselongname,
+                $useremail,
+                $userpersonid,
+                $useroprid,
+                $useractivityid,
+                $classcode,
+                $message
             );
+
+            return 'Error';
+        }
+
+        // Check if user is already actively enrolled before enrolling.
+        $alreadyenrolled = $DB->record_exists_sql(
+            "SELECT 1 FROM {user_enrolments} ue
+              WHERE ue.enrolid = :enrolid AND ue.userid = :userid AND ue.status = :status",
+            ['enrolid' => $instance->id, 'userid' => $userid, 'status' => ENROL_USER_ACTIVE]
+        );
+
+        $enrol->enrol_user(
+            $instance,
+            $userid,
+            $instance->roleid,
+            0,
+            0,
+            ENROL_USER_ACTIVE
+        );
+
+        // Confirm the enrolment actually landed before reporting success. enrol_user()
+        // returns void, so without this check a silent failure is logged as 'Success'
+        // and the record is never retried.
+        $isenrolled = $DB->record_exists(
+            'user_enrolments',
+            ['enrolid' => $instance->id, 'userid' => $userid]
+        );
+        if (!$isenrolled) {
+            $message = "enrol_user() did not create a user_enrolments row for user"
+                . " {$userid} in course {$course->id} ({$classcode}).";
+            mtrace('PSA Enrol Sync: ' . $message);
+
+            log_record(
+                $recordid,
+                $hash,
+                $recorddatecreated,
+                $course->id,
+                $elmcourseid,
+                $classcode,
+                $enrolmentid,
+                $userid,
+                $firstname,
+                $lastname,
+                $useremail,
+                $userguid,
+                $useroprid,
+                $userpersonid,
+                $useractivityid,
+                'Enrol',
+                'Error',
+                $recordenrolid
+            );
+
+            send_failure_notification(
+                'enrolfail',
+                $firstname,
+                $lastname,
+                $courselongname,
+                $useremail,
+                $userpersonid,
+                $useroprid,
+                $useractivityid,
+                $classcode,
+                $message
+            );
+
+            return 'Error';
         }
 
         // Only send welcome email for genuinely new enrolments.
@@ -524,8 +676,51 @@ function process_enrolment_record($record) {
             $recordenrolid
         );
     } else if ($enrolmentstatus == 'Suspend') {
-        // Suspend the user in the course.
-        suspend_user_in_course($userid, $course->id, $elmcourseid);
+        // Suspend the user in the course. Returns true, or a reason string on failure;
+        // previously this returned nothing and every outcome was logged as 'Success',
+        // including "the user was never enrolled" and "the course has no manual
+        // enrolment instance".
+        $suspendresult = suspend_user_in_course($userid, $course->id, $elmcourseid);
+
+        if ($suspendresult !== true) {
+            mtrace('PSA Enrol Sync: ' . $suspendresult);
+
+            log_record(
+                $recordid,
+                $hash,
+                $recorddatecreated,
+                $course->id,
+                $elmcourseid,
+                $classcode,
+                $enrolmentid,
+                $userid,
+                $firstname,
+                $lastname,
+                $useremail,
+                $userguid,
+                $useroprid,
+                $userpersonid,
+                $useractivityid,
+                'Suspend',
+                'Error',
+                $recordenrolid
+            );
+
+            send_failure_notification(
+                'enrolfail',
+                $firstname,
+                $lastname,
+                $courselongname,
+                $useremail,
+                $userpersonid,
+                $useroprid,
+                $useractivityid,
+                $classcode,
+                $suspendresult
+            );
+
+            return 'Error';
+        }
 
         $action = 'Suspend';
         log_record(
@@ -602,10 +797,15 @@ function create_user($firstname, $lastname, $email, $guid) {
  * @param int $userid The Moodle user ID.
  * @param int $courseid The Moodle course ID.
  * @param int $elmcourseid The ELM course identifier.
- * @return void
+ * @return true|string True on success, or a message describing why it failed.
  */
 function suspend_user_in_course($userid, $courseid, $elmcourseid) {
     global $DB;
+
+    $enrol = enrol_get_plugin('manual');
+    if (!$enrol) {
+        return 'The manual enrolment plugin is disabled site-wide.';
+    }
 
     $enrolinstance = $DB->get_record(
         'enrol',
@@ -613,20 +813,41 @@ function suspend_user_in_course($userid, $courseid, $elmcourseid) {
         '*',
         IGNORE_MISSING
     );
-    if ($enrolinstance) {
-        $userenrolment = $DB->get_record(
-            'user_enrolments',
-            ['enrolid' => $enrolinstance->id, 'userid' => $userid],
-            '*',
-            IGNORE_MISSING
-        );
-        if ($userenrolment) {
-            // Status 1 indicates suspended.
-            $userenrolment->status = 1;
-            $userenrolment->timemodified = time();
-            $DB->update_record('user_enrolments', $userenrolment);
-        }
+    if (!$enrolinstance) {
+        return "Course {$courseid} has no manual enrolment instance.";
     }
+
+    $userenrolment = $DB->get_record(
+        'user_enrolments',
+        ['enrolid' => $enrolinstance->id, 'userid' => $userid],
+        '*',
+        IGNORE_MISSING
+    );
+    if (!$userenrolment) {
+        return "User {$userid} has no manual enrolment in course {$courseid} to suspend.";
+    }
+
+    if ((int)$userenrolment->status === ENROL_USER_SUSPENDED) {
+        // Already suspended: not an error, nothing to do.
+        return true;
+    }
+
+    // Use the enrol API rather than writing to user_enrolments directly, so that the
+    // enrolment caches are invalidated and \core\event\user_enrolment_updated fires.
+    // The previous direct update_record() bypassed both.
+    $enrol->update_user_enrol($enrolinstance, $userid, ENROL_USER_SUSPENDED);
+
+    // Confirm it took effect rather than assuming it did.
+    $updated = $DB->get_field(
+        'user_enrolments',
+        'status',
+        ['enrolid' => $enrolinstance->id, 'userid' => $userid]
+    );
+    if ((int)$updated !== ENROL_USER_SUSPENDED) {
+        return "Suspension of user {$userid} in course {$courseid} did not take effect.";
+    }
+
+    return true;
 }
 
 /**
@@ -833,6 +1054,27 @@ function send_failure_notification(
             $message .= "IDIR: {$oprid}\n";
             $message .= "Activity ID: {$activityid}\n";
             $message .= "Please investigate the issue.";
+        } else if ($type == 'enrolfail') {
+            $subject = "Enrolment Failure Notification";
+            $message = "A user could not be enrolled or suspended.\n\n";
+            $message .= "{$errormessage}\n";
+            $message .= "Name: {$firstname} {$lastname}\n";
+            $message .= "Course: {$coursename}\n";
+            $message .= "Class Code: {$classcode}\n";
+            $message .= "Email: {$email}\n";
+            $message .= "Learner ID: {$personid}\n";
+            $message .= "IDIR: {$oprid}\n";
+            $message .= "Activity ID: {$activityid}\n";
+            $message .= "Please investigate the issue.";
+        } else {
+            // Unrecognised type: still alert rather than sending an empty message.
+            $subject = "PSALS Sync Failure Notification";
+            $message = "A failure occurred during enrolment processing.\n\n";
+            $message .= "Type: {$type}\n";
+            $message .= "{$errormessage}\n";
+            $message .= "Name: {$firstname} {$lastname}\n";
+            $message .= "Course: {$coursename}\n";
+            $message .= "Email: {$email}\n";
         }
 
         // Create a dummy user object for sending the email.
@@ -861,4 +1103,73 @@ function send_failure_notification(
             email_to_user($recipient, $dummyuser, $subject, $message);
         }
     }
+}
+
+/**
+ * Alert administrators that the enrolment API call itself failed.
+ *
+ * Distinct from send_failure_notification(), which reports a problem with one learner
+ * record. This reports that no records could be fetched at all -- previously a silent
+ * failure, because the curl options were passed in the wrong argument position and
+ * FAILONERROR never took effect.
+ *
+ * Throttled to at most one alert per hour: the sync task runs every 10 minutes, and an
+ * outage that lasts a working day should not generate 70 emails.
+ *
+ * @param int $httpcode The HTTP status code returned, or 0 if the request never completed.
+ * @param int $errno The curl error number, or 0 if none.
+ * @param int $page The 1-indexed page of the paged response that failed.
+ * @return void
+ */
+function local_psaelmsync_notify_api_failure($httpcode, $errno, $page) {
+    $throttleseconds = 3600;
+    $lastalert = (int)get_config('local_psaelmsync', 'last_api_failure_alert');
+    if ($lastalert && (time() - $lastalert) < $throttleseconds) {
+        mtrace('PSA Enrol Sync: API failure alert suppressed (last sent '
+            . (time() - $lastalert) . 's ago).');
+        return;
+    }
+
+    $adminemails = get_config('local_psaelmsync', 'notificationemails');
+    if (empty($adminemails)) {
+        return;
+    }
+
+    $hint = '';
+    if ($httpcode == 401 || $httpcode == 403) {
+        $hint = 'The API token may have been rotated, or this host may have been'
+            . ' removed from the CData IP allowlist.';
+    } else if ($httpcode == 404) {
+        $hint = 'Check the Enrolment API URL in the plugin settings.';
+    } else if ($httpcode == 502 || $httpcode == 503 || $httpcode == 504) {
+        $hint = 'The CData endpoint appears to be down or unreachable.';
+    } else if ($httpcode === 0) {
+        $hint = 'The request did not complete -- DNS, TLS, network or timeout.';
+    }
+
+    $subject = 'PSALS Sync: enrolment API request failed';
+    $message = "The scheduled enrolment intake could not fetch records.\n\n";
+    $message .= "HTTP status: {$httpcode}\n";
+    $message .= "curl errno:  {$errno}\n";
+    $message .= "Failed on page: {$page}\n";
+    if ($hint !== '') {
+        $message .= "\n{$hint}\n";
+    }
+    $message .= "\nNo records were processed and the high-water mark was not advanced,"
+        . " so nothing has been skipped. The next scheduled run will retry.\n";
+    $message .= "\nFurther alerts are suppressed for one hour.\n";
+
+    $dummyuser = \core_user::get_noreply_user();
+    foreach (explode(',', $adminemails) as $email) {
+        $email = trim($email);
+        if ($email === '' || !validate_email($email)) {
+            continue;
+        }
+        $recipient = clone $dummyuser;
+        $recipient->email = $email;
+        $recipient->id = -99;
+        email_to_user($recipient, $dummyuser, $subject, $message);
+    }
+
+    set_config('last_api_failure_alert', time(), 'local_psaelmsync');
 }

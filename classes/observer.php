@@ -114,6 +114,20 @@ class observer {
             $enrolstatus = 'Complete';
             $datecreated = date('Y-m-d h:i:s');
 
+            // Report the date the learner actually completed, not the moment this
+            // observer happened to run. Moodle evaluates completion criteria from cron,
+            // so the event can fire hours after the fact, and a backdated or bulk
+            // completion can differ by much more. This value lands in an external HR
+            // system of record.
+            $timecompleted = $DB->get_field(
+                'course_completions',
+                'timecompleted',
+                ['course' => $courseid, 'userid' => $userid]
+            );
+            $completedate = !empty($timecompleted)
+                ? date('Y-m-d', $timecompleted)
+                : date('Y-m-d');
+
             // Setup the cURL call to the completion API.
             $apiurl = get_config('local_psaelmsync', 'completion_apiurl');
             $apitoken = get_config('local_psaelmsync', 'completion_apitoken');
@@ -121,7 +135,7 @@ class observer {
             $ch = curl_init($apiurl);
 
             $data = [
-                'COURSE_COMPLETE_DATE' => date('Y-m-d'),
+                'COURSE_COMPLETE_DATE' => $completedate,
                 'COURSE_STATE' => $enrolstatus,
                 'ENROLMENT_ID' => (int) $elmenrolmentid,
                 'USER_STATE' => 'Active',
