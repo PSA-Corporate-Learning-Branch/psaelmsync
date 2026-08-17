@@ -244,14 +244,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
             );
 
             if (!$user) {
-                $user = create_user(
-                    $firstname,
-                    $lastname,
-                    $useremail,
-                    $userguid
-                );
-
-                if (!$user) {
+                // The shared create_user() returns a user or throws; it never returns
+                // false. A duplicate username or email arrives as a dml_write_exception,
+                // so the failure has to be caught rather than tested for.
+                try {
+                    $user = create_user(
+                        $firstname,
+                        $lastname,
+                        $useremail,
+                        $userguid
+                    );
+                } catch (Exception $e) {
+                    $user = false;
                     $useremailcheck = $DB->get_record(
                         'user',
                         ['email' => $useremail]
@@ -260,7 +264,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
                         $feedback = "Failed to create user."
                             . " An account with email "
                             . s($useremail)
-                            . " already exists. ";
+                            . " already exists, which usually means the GUID"
+                            . " changed. ";
                         $feedback .= "<a href='/user/view.php?id="
                             . $useremailcheck->id
                             . "' target='_blank'>"
@@ -268,7 +273,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
                     } else {
                         $feedback = "Failed to create a new"
                             . " user for GUID "
-                            . s($userguid) . ".";
+                            . s($userguid) . ": "
+                            . s($e->getMessage());
                     }
                     $feedbacktype = 'danger';
                 }
@@ -511,15 +517,18 @@ if (
 
         $user = $DB->get_record('user', ['idnumber' => $userguid]);
         if (!$user) {
-            $user = create_user(
-                $firstname,
-                $lastname,
-                $useremail,
-                $userguid
-            );
-            if (!$user) {
+            // As above: a create failure surfaces as an exception, not a false return.
+            try {
+                $user = create_user(
+                    $firstname,
+                    $lastname,
+                    $useremail,
+                    $userguid
+                );
+            } catch (Exception $e) {
                 $errorcount++;
-                $errors[] = "Failed to create user {$useremail}";
+                $errors[] = "Failed to create user {$useremail}: "
+                    . $e->getMessage();
                 continue;
             }
         }
@@ -635,8 +644,10 @@ if (
             array_slice($errors, 0, 5)
         );
         $ellipsis = count($errors) > 5 ? '...' : '';
+        // These entries are plain text built from record data and exception messages,
+        // and $feedback is echoed unescaped, so escape them here.
         $feedback .= "<br><small>"
-            . $errorsummary . $ellipsis . "</small>";
+            . s($errorsummary) . $ellipsis . "</small>";
     }
 }
 
