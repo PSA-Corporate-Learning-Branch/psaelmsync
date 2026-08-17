@@ -26,6 +26,12 @@ defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
 require_once($CFG->libdir . '/filelib.php');
+// The create_user() helper below calls user_create_user(). Moodle lazy-loads
+// user/lib.php rather than including it at bootstrap, so declare the dependency here
+// instead of relying on a caller having pulled it in first: web requests only had it
+// because $OUTPUT->header() requires it, and cron only because the oauth2 auth plugin
+// does.
+require_once($CFG->dirroot . '/user/lib.php');
 
 /**
  * Get (or lazily create) the per-site secret used to sign round-tripped payloads.
