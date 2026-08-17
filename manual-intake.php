@@ -27,7 +27,6 @@
 
 require_once('../../config.php');
 require_once($CFG->libdir . '/filelib.php');
-require_once($CFG->dirroot . '/user/lib.php');
 require_once($CFG->dirroot . '/local/psaelmsync/lib.php');
 
 global $CFG, $DB, $PAGE, $OUTPUT;
@@ -195,37 +194,6 @@ function check_user_enrolled($courseidnumber, $userid) {
     return false;
 }
 
-/**
- * Create a new user (local helper matching lib.php pattern).
- *
- * @param string $useremail The user's email address.
- * @param string $firstname The user's first name.
- * @param string $lastname The user's last name.
- * @param string $userguid The user's GUID (stored as idnumber).
- * @return object The created user object.
- */
-function create_new_user_local($useremail, $firstname, $lastname, $userguid) {
-    global $DB;
-
-    $user = new stdClass();
-    $user->username = strtolower($useremail);
-    $user->email = $useremail;
-    $user->idnumber = $userguid;
-    $user->firstname = $firstname;
-    $user->lastname = $lastname;
-    $user->password = hash_internal_user_password(random_string(8));
-    $user->confirmed = 1;
-    $user->auth = 'oauth2';
-    $user->emailformat = 1;
-    $user->mnethostid = 1;
-    $user->timecreated = time();
-    $user->timemodified = time();
-
-    $user->id = user_create_user($user, true, false);
-
-    return $user;
-}
-
 // Process form submissions.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
     require_sesskey();
@@ -276,10 +244,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process'])) {
             );
 
             if (!$user) {
-                $user = create_new_user_local(
-                    $useremail,
+                $user = create_user(
                     $firstname,
                     $lastname,
+                    $useremail,
                     $userguid
                 );
 
@@ -543,10 +511,10 @@ if (
 
         $user = $DB->get_record('user', ['idnumber' => $userguid]);
         if (!$user) {
-            $user = create_new_user_local(
-                $useremail,
+            $user = create_user(
                 $firstname,
                 $lastname,
+                $useremail,
                 $userguid
             );
             if (!$user) {
